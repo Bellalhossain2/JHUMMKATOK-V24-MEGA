@@ -1,0 +1,25 @@
+{
+  "version": "V24 MEGA",
+  "musicLibrary": [
+    {"id": 1, "title": "Trending Jhummka 1", "url": "https://cdn.jhummkatok.com/songs/1.mp3", "uses": 1500, "trending": true},
+    {"id": 2, "title": "Trending Jhummka 2", "url": "https://cdn.jhummkatok.com/songs/2.mp3", "uses": 1200, "trending": true},
+    {"id": 3, "title": "Love Beat 😍", "url": "https://cdn.jhummkatok.com/songs/3.mp3", "uses": 900, "emoji": "😍"},
+    {"id": 4, "title": "Fire Dance 🔥", "url": "https://cdn.jhummkatok.com/songs/4.mp3", "uses": 850, "emoji": "🔥"},
+    {"id": 5, "title": "100% Vibe 💯", "url": "https://cdn.jhummkatok.com/songs/5.mp3", "uses": 800, "emoji": "💯"},
+    {"id": 6, "title": "Dhol Beat", "url": "https://cdn.jhummkatok.com/songs/6.mp3", "uses": 700},
+    {"id": 7, "title": "Romantic Slow", "url": "https://cdn.jhummkatok.com/songs/7.mp3", "uses": 650},
+    {"id": 8, "title": "Party Night", "url": "https://cdn.jhummkatok.com/songs/8.mp3", "uses": 600},
+    {"id": 9, "title": "Sad Loop", "url": "https://cdn.jhummkatok.com/songs/9.mp3", "uses": 550},
+    {"id": 10, "title": "Happy Dance", "url": "https://cdn.jhummkatok.com/songs/10.mp3", "uses": 500},
+    {"id": 11, "title": "Bangla Beat", "url": "https://cdn.jhummkatok.com/songs/11.mp3", "uses": 480},
+    {"id": 12, "title": "Hindi Remix", "url": "https://cdn.jhummkatok.com/songs/12.mp3", "uses": 460},
+    {"id": 13, "title": "English Vibe", "url": "https://cdn.jhummkatok.com/songs/13.mp3", "uses": 440},
+    {"id": 14, "title": "TikTok Style", "url": "https://cdn.jhummkatok.com/songs/14.mp3", "uses": 420},
+    {"id": 15, "title": "Slow Motion", "url": "https://cdn.jhummkatok.com/songs/15.mp3", "uses": 400},
+    {"id": 16, "title": "Fast Beat", "url": "https://cdn.jhummkatok.com/songs/16.mp3", "uses": 380},
+    {"id": 17, "title": "Love You", "url": "https://cdn.jhummkatok.com/songs/17.mp3", "uses": 360},
+    {"id": 18, "title": "Breakup Song", "url": "https://cdn.jhummkatok.com/songs/18.mp3", "uses": 340},
+    {"id": 19, "title": "Wedding Dance", "url": "https://cdn.jhummkatok.com/songs/19.mp3", "uses": 320},
+    {"id": 20, "title": "JHUMMKATOK Original", "url": "https://cdn.jhummkatok.com/songs/20.mp3", "uses": 10000, "trending": true, "original": true}
+  ]
+} 
