@@ -1,0 +1,7 @@
+{
+  "name": "jhummkatok-v24-mega",
+  "version": "24.0.0",
+  "description": "TikTok Style - Niotron + Next.js + Firebase + bellal.surge.sh",
+  "main": "app/features/time-ago.js",
+  "scripts": { "dev": "next dev", "build": "next build" }
+} 
