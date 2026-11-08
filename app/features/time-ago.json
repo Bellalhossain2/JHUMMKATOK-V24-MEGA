@@ -1,0 +1,10 @@
+// V24 MEGA Time Ago - Live 1 min, 1 hour, 1 year
+function timeAgo(timestamp){
+  const diff = Date.now() - timestamp;
+  if(diff < 60000) return "Just now";
+  if(diff < 3600000) return Math.floor(diff/60000)+" min ago";
+  if(diff < 86400000) return Math.floor(diff/3600000)+" hour ago";
+  if(diff < 31536000000) return Math.floor(diff/86400000)+" day ago";
+  return Math.floor(diff/31536000000)+" year ago";
+}
+// Clock.Timer every 60s refresh 
