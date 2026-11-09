@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
+// @ts-ignore
 import { joinRoom, selfId } from "trystero/torrent";
 
 const GOOGLE_CLIENT_ID = "824624379526-0ss4euebvtp5bndbb8r1ut7cqcg30p4j.apps.googleusercontent.com";
