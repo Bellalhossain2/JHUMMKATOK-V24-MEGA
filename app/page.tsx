@@ -1,77 +1,86 @@
 "use client";
-import { useState, useRef } from "react";
+
+import { useEffect, useState } from "react";
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 // @ts-ignore
 import { joinRoom, selfId } from "trystero/torrent";
 
-const GOOGLE_CLIENT_ID = "824624379526-0ss4euebvtp5bndbb8r1ut7cqcg30p4j.apps.googleusercontent.com";
+export const dynamic = "force-dynamic";
 
 export default function Page() {
   const [user, setUser] = useState<any>(null);
-  const [joined, setJoined] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
+  const [room, setRoom] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [input, setInput] = useState("");
+  const [peers, setPeers] = useState(0);
 
-  const joinMain = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
-    const room = joinRoom({appId:"jhummkatok_v24_mega_final"}, "MAIN_ROOM_1");
-    const [sendStream, getStream] = room.makeAction("stream");
-    setJoined(true);
-    setUsers([{id:selfId, name:user.name, photo:user.picture, stream, isYou:true}]);
-    room.onPeerJoin(id => sendStream(stream, id));
-    getStream((s:any, id:string)=>{
-      setUsers(prev => prev.find(u=>u.id===id) ? prev : [...prev, {id, name:`User`, stream:s, isYou:false}]);
+  useEffect(() => {
+    if (!user) return;
+    const r = joinRoom({ appId: "jhummkatok-v24-mega-2024" }, "global-chat");
+    const [send, get] = r.makeAction("msg");
+    // @ts-ignore
+    r.onPeerJoin(() => setPeers((p) => p + 1));
+    // @ts-ignore
+    r.onPeerLeave(() => setPeers((p) => Math.max(0, p - 1)));
+    // @ts-ignore
+    get((data: any, peerId: string) => {
+      setMessages((m) => [...m, data]);
     });
-    sendStream(stream);
+    // @ts-ignore
+    setRoom({ send });
+    return () => r.leave();
+  }, [user]);
+
+  const sendMsg = () => {
+    if (!input.trim() || !room) return;
+    const msg = { text: input, name: user.name, pic: user.picture, time: new Date().toLocaleTimeString(), id: selfId };
+    room.send(msg);
+    setMessages((m) => [...m, msg]);
+    setInput("");
   };
 
-  if(!user) {
+  if (!user) {
     return (
-      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <div style={{background:"#000", minHeight:"100vh", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", padding:"20px"}}>
-        <div style={{background:"#111", borderRadius:"20px", padding:"30px", textAlign:"center", border:"2px solid #ff0050", maxWidth:"400px", width:"100%"}}>
-          <h1 style={{color:"#ff0050", margin:"0 0 10px 0"}}>JHUMMKATOK V24</h1>
-          <p style={{opacity:.7, margin:"0 0 20px 0"}}>15 MEGA LIVE Rooms - Google Login Required</p>
-          <div style={{background:"#fff", borderRadius:"10px", padding:"10px", display:"flex", justifyContent:"center"}}>
-            <GoogleLogin onSuccess={cred=>{
-              const payload = JSON.parse(atob(cred.credential!.split('.')[1]));
+      <GoogleOAuthProvider clientId="10665741577-0d8k6v9l5t3r5f8q9j2k4l6m8n0p1q2r.apps.googleusercontent.com">
+        <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", flexDirection: "column", background: "#000", color: "#fff", fontFamily: "sans-serif" }}>
+          <h1 style={{ fontSize: 48, marginBottom: 20 }}>JHUMMKATOK V24 MEGA</h1>
+          <p style={{ marginBottom: 20 }}>Login with Google to enter live chat</p>
+          <GoogleLogin
+            onSuccess={(cred: any) => {
+              const payload = JSON.parse(atob(cred.credential.split(".")[1]));
               setUser(payload);
-            }} theme="filled_black" size="large" width="300" />
-          </div>
-          <p style={{fontSize:"11px", opacity:.5, marginTop:"15px"}}>Login with Google to join MAIN STAGE Room 1<br/>3 LIVE working now!</p>
+            }}
+            onError={() => alert("Login Failed")}
+          />
+          <p style={{ marginTop: 20, fontSize: 12, opacity: 0.6 }}>After login you will be connected P2P via Trystero (no server)</p>
         </div>
-      </div>
       </GoogleOAuthProvider>
-    )
+    );
   }
 
   return (
-    <div style={{background:"#000", minHeight:"100vh", color:"#fff", padding:"10px"}}>
-      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", background:"#111", padding:"10px", borderRadius:"12px"}}>
-        <div style={{display:"flex", alignItems:"center", gap:"10px"}}>
-          <img src={user.picture} style={{width:"35px", height:"35px", borderRadius:"50%"}}/>
-          <span>Hi, {user.name}</span>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0a0a0a", color: "#fff", fontFamily: "sans-serif" }}>
+      <div style={{ padding: 15, background: "#111", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #222" }}>
+        <b>JHUMMKATOK V24 MEGA • LIVE • {peers + 1} online</b>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img src={user.picture} width={32} height={32} style={{ borderRadius: "50%" }} />
+          <span>{user.name}</span>
         </div>
-        <span style={{background:"#ff0050", padding:"5px 10px", borderRadius:"15px", fontSize:"12px"}}>LIVE</span>
       </div>
-
-      <div style={{background:"#111", border:"3px solid #ff0050", borderRadius:"15px", padding:"10px", marginTop:"10px"}}>
-        <h2 style={{textAlign:"center", color:"#ff0050", margin:"0 0 10px 0"}}>🔴 ROOM 1 MAIN - {users.length || 1} LIVE</h2>
-        {!joined ? (
-          <div style={{textAlign:"center", padding:"20px", background:"#222", borderRadius:"12px"}}>
-            <button onClick={joinMain} style={{background:"#ff0050", color:"#fff", border:"none", padding:"14px 28px", borderRadius:"25px", fontWeight:"bold", fontSize:"16px", cursor:"pointer"}}>🚀 JOIN NOW - GO LIVE</button>
-            <p style={{fontSize:"12px", opacity:.6, marginTop:"10px"}}>Everyone joins same room - See each other!</p>
+      <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ background: m.id === selfId ? "#1a3a5a" : "#1a1a1a", padding: 10, borderRadius: 10, maxWidth: "80%", alignSelf: m.id === selfId ? "flex-end" : "flex-start" }}>
+            <div style={{ fontSize: 12, opacity: 0.6, display: "flex", gap: 6, alignItems: "center" }}>
+              <img src={m.pic} width={16} height={16} style={{ borderRadius: "50%" }} /> {m.name} • {m.time}
+            </div>
+            <div style={{ marginTop: 4 }}>{m.text}</div>
           </div>
-        ) : (
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px"}}>
-            {users.map(u=>(
-              <div key={u.id} style={{background:"#000", borderRadius:"10px", overflow:"hidden", border: u.isYou ? "2px solid #ff0050":"1px solid #333"}}>
-                <video autoPlay playsInline muted={u.isYou} ref={el=>{if(el && u.stream) (el as any).srcObject=u.stream}} style={{width:"100%", height:"180px", objectFit:"cover"}}/>
-                <div style={{padding:"5px", fontSize:"11px", textAlign:"center", background: u.isYou ? "#ff0050" : "#222"}}>{u.isYou ? "YOU - " + u.name : u.name}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        ))}
+      </div>
+      <div style={{ padding: 15, background: "#111", display: "flex", gap: 10 }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMsg()} placeholder="Type message..." style={{ flex: 1, padding: 12, borderRadius: 8, border: "1px solid #333", background: "#000", color: "#fff" }} />
+        <button onClick={sendMsg} style={{ padding: "12px 20px", borderRadius: 8, background: "#fff", color: "#000", fontWeight: "bold", cursor: "pointer" }}>Send</button>
       </div>
     </div>
-  )
+  );
 } 
