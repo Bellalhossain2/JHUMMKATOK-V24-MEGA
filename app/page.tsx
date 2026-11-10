@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 export default function Page() {
   const [user, setUser] = useState(false);
   const [msg, setMsg] = useState("");
-  const [msgs, setMsgs] = useState<{id:string,text:string,time:string}[]>([]);
+  const [msgs, setMsgs] = useState<any[]>([]);
   const [peers, setPeers] = useState(0);
   const [currentRoom, setCurrentRoom] = useState("jhumm-room-1");
 
@@ -24,26 +24,38 @@ export default function Page() {
 
   const send = () => {
     if(!msg) return;
-    const m = {id:Date.now().toString(), text:msg, time:new Date().toLocaleTimeString()};
+    const m = {id:Date.now(), text:msg, time:new Date().toLocaleTimeString()};
     (window as any).sendChat(m);
     setMsgs(s=>[...s,m]);
     setMsg("");
   };
 
-  if(!user) return <button onClick={()=>setUser(true)} className="p-10 m-10 bg-black text-white">Enter Jhummkatok - 15 Rooms Live</button>;
+  if(!user) return (
+    <div style={{background:"black", color:"white", height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column"}}>
+      <h1 style={{fontSize:40}}>JHUMMKATOK</h1>
+      <p>15 Rooms Live - No Server - P2P</p>
+      <button onClick={()=>setUser(true)} style={{marginTop:20, padding:"15px 30px", background:"white", color:"black", borderRadius:30, fontWeight:"bold", cursor:"pointer"}}>ENTER 15 ROOMS 🔴 LIVE</button>
+    </div>
+  );
 
   return (
-    <div className="p-4">
-      <h1>15 ROOMS LIVE - {peers+1} online in {currentRoom}</h1>
-      <div className="grid grid-cols-5 gap-2 my-4">
+    <div style={{background:"#000", color:"#fff", minHeight:"100vh", padding:20, fontFamily:"sans-serif"}}>
+      <h2 style={{textAlign:"center"}}>🔴 LIVE: {currentRoom} - {peers+1} Online</h2>
+      <div style={{display:"flex", flexWrap:"wrap", gap:8, justifyContent:"center", margin:"20px 0"}}>
         {Array.from({length:15}, (_,i)=>{
           const r = `jhumm-room-${i+1}`;
-          return <button key={r} onClick={()=>{setCurrentRoom(r); setMsgs([]);}} className={`p-2 border ${currentRoom===r?'bg-black text-white':''}`}>Room {i+1}</button>
+          const active = currentRoom===r;
+          return <button key={r} onClick={()=>{setCurrentRoom(r); setMsgs([]); setPeers(0);}} style={{padding:"8px 14px", borderRadius:20, border:"1px solid #333", background: active ? "#fff" : "#111", color: active ? "#000" : "#fff", cursor:"pointer"}}>Room {i+1}</button>
         })}
       </div>
-      <div>{msgs.map(m=><div key={m.id}><b>{m.time}</b> {m.text}</div>)}</div>
-      <input value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Type message" className="border p-2" />
-      <button onClick={send} className="bg-black text-white p-2 ml-2">Send</button>
+      <div style={{background:"#111", height:300, overflowY:"auto", padding:10, borderRadius:10, marginBottom:10}}>
+        {msgs.map(m=><div key={m.id} style={{margin:"5px 0"}}><span style={{color:"#888", fontSize:12}}>{m.time}</span> {m.text}</div>)}
+        {msgs.length===0 && <div style={{color:"#555", textAlign:"center", marginTop:100}}>No messages yet - Be first!</div>}
+      </div>
+      <div style={{display:"flex", gap:10}}>
+        <input value={msg} onChange={e=>setMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder={`Message in ${currentRoom}...`} style={{flex:1, padding:12, borderRadius:25, border:"1px solid #333", background:"#111", color:"#fff"}} />
+        <button onClick={send} style={{padding:"12px 25px", borderRadius:25, background:"#fff", color:"#000", fontWeight:"bold", cursor:"pointer"}}>Send</button>
+      </div>
     </div>
   );
 } 
