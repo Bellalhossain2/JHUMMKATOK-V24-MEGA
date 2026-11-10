@@ -6,12 +6,13 @@ export default function Page() {
   const [msg, setMsg] = useState("");
   const [msgs, setMsgs] = useState<{id:string,text:string,time:string}[]>([]);
   const [peers, setPeers] = useState(0);
+  const [currentRoom, setCurrentRoom] = useState("jhumm-room-1");
 
   useEffect(() => {
     if(!user) return;
     let room:any;
-    import("trystero/torrent").then(({joinRoom})=>{
-      room = joinRoom({appId:"jhummkatok-v24-mega-2024"},"jhumm-main");
+    import("trystero").then(({joinRoom})=>{
+      room = joinRoom({appId:"jhummkatok-v24-mega"}, currentRoom);
       const [sendChat, getChat] = room.makeAction("chat");
       room.onPeerJoin(()=> setPeers(p=>p+1));
       room.onPeerLeave(()=> setPeers(p=>Math.max(0,p-1)));
@@ -19,40 +20,30 @@ export default function Page() {
       (window as any).sendChat = sendChat;
     });
     return ()=> room?.leave();
-  }, [user]);
+  }, [user, currentRoom]);
 
   const send = () => {
     if(!msg) return;
     const m = {id:Date.now().toString(), text:msg, time:new Date().toLocaleTimeString()};
+    (window as any).sendChat(m);
     setMsgs(s=>[...s,m]);
-    (window as any).sendChat?.(m);
     setMsg("");
   };
 
-  if (!user) {
-    return (
-      <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",flexDirection:"column",background:"#000",color:"#fff",fontFamily:"sans-serif"}}>
-        <h1 style={{fontSize:32, letterSpacing:2}}>JHUMMKATOK V24 MEGA</h1>
-        <p>Decentralized P2P Chat - No Server</p>
-        <button onClick={()=>setUser(true)} style={{padding:"15px 40px",marginTop:20,cursor:"pointer",background:"#fff",color:"#000",border:"none",borderRadius:8,fontWeight:"bold"}}>Enter Chat</button>
-        <p style={{marginTop:20,opacity:0.5,fontSize:12}}>jhumkatok.com - LIVE</p>
-      </div>
-    );
-  }
+  if(!user) return <button onClick={()=>setUser(true)} className="p-10 m-10 bg-black text-white">Enter Jhummkatok - 15 Rooms Live</button>;
 
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#0a0a0a",color:"#fff",fontFamily:"sans-serif"}}>
-      <div style={{padding:15,background:"#111",display:"flex",justifyContent:"space-between"}}>
-        <b>JHUMMKATOK V24 MEGA - LIVE 🔴</b>
-        <span>Peers: {peers+1}</span>
+    <div className="p-4">
+      <h1>15 ROOMS LIVE - {peers+1} online in {currentRoom}</h1>
+      <div className="grid grid-cols-5 gap-2 my-4">
+        {Array.from({length:15}, (_,i)=>{
+          const r = `jhumm-room-${i+1}`;
+          return <button key={r} onClick={()=>{setCurrentRoom(r); setMsgs([]);}} className={`p-2 border ${currentRoom===r?'bg-black text-white':''}`}>Room {i+1}</button>
+        })}
       </div>
-      <div style={{flex:1,padding:20,overflowY:"auto"}}>
-        {msgs.map(m=><div key={m.id} style={{background:"#222",padding:"10px 15px",marginBottom:10,borderRadius:12,maxWidth:"80%"}}><div style={{fontSize:12,opacity:0.6}}>{m.time}</div>{m.text}</div>)}
-      </div>
-      <div style={{padding:15,display:"flex",gap:10,background:"#111"}}>
-        <input value={msg} onChange={e=>setMsg(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Type message..." style={{flex:1,padding:12,borderRadius:8,border:"none",background:"#222",color:"#fff"}} />
-        <button onClick={send} style={{padding:"0 25px",background:"#fff",color:"#000",border:"none",borderRadius:8,cursor:"pointer",fontWeight:"bold"}}>Send</button>
-      </div>
+      <div>{msgs.map(m=><div key={m.id}><b>{m.time}</b> {m.text}</div>)}</div>
+      <input value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Type message" className="border p-2" />
+      <button onClick={send} className="bg-black text-white p-2 ml-2">Send</button>
     </div>
   );
 } 
