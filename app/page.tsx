@@ -16,7 +16,7 @@ const [watch,setWatch]=useState(null as any);
 const [chats,setChats]=useState([] as any);
 const [chatIn,setChatIn]=useState("");
 const [gifts,setGifts]=useState([] as any);
-const [debug,setDebug]=useState("Starting...");
+const [status,setStatus]=useState("Connecting to Bigo server...");
 const localRef=useRef(null as any);
 const remoteRef=useRef(null as any);
 const streamRef=useRef(null as any);
@@ -24,7 +24,7 @@ const hostRef=useRef(null as any);
 const viewRef=useRef(null as any);
 const chatSend=useRef(null as any);
 const giftSend=useRef(null as any);
-const lobbyRef=useRef(null as any);
+const mqttRef=useRef(null as any);
 
 useEffect(()=>{
 let s=localStorage.getItem("jhumm_v24");
@@ -33,49 +33,77 @@ if(s){let u=JSON.parse(s);setUser(u);setMyId(u.id);setAvatar(u.avatar);}
 
 useEffect(()=>{
 if(!user||!myId)return;
+let mounted=true;
+import("mqtt").then(function(mqtt){
+if(!mounted)return;
+let client=mqtt.connect("wss://broker.emqx.io:8084/mqtt",{clientId:"jhumm_"+myId+"_"+Date.now(),clean:true,connectTimeout:5000});
+mqttRef.current=client;
+client.on("connect",function(){
+setStatus("✅ Connected to Bigo Global Server");
+client.subscribe("jhummkatok/live/v28",function(){
+console.log("Subscribed to live feed");
+});
+let topicChat="jhummkatok/chat/"+room;
+client.subscribe(topicChat);
+let topicGift="jhummkatok/gift/"+room;
+client.subscribe(topicGift);
+});
+
+client.on("message",function(topic:any,msg:any){
+try{
+let data=JSON.parse(msg.toString());
+if(topic==="jhummkatok/live/v28"){
+if(data.id===myId)return;
+if(!data.isLive)return;
+setHosts(function(prev:any){
+let filtered=prev.filter(function(h:any){return h.id!==data.id;});
+let now=Date.now();
+let alive=filtered.filter(function(h:any){return now-h.time<15000;});
+return [...alive,data];
+});
+}
+if(topic.startsWith("jhummkatok/chat/")){
+setChats(function(p:any){return [...p.slice(-30),data];});
+}
+if(topic.startsWith("jhummkatok/gift/")){
+let id=Date.now()+Math.random();
+setGifts(function(p:any){return [...p,{id:id,emoji:data.emoji}];});
+setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){return x.id!==id;});});},3500);
+}
+}catch(e){}
+});
+
+let iv=setInterval(function(){
+if(client.connected){
+let payload={id:myId,name:user.name,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()};
+client.publish("jhummkatok/live/v28",JSON.stringify(payload));
+setStatus(isLive ? "🔴 YOU ARE LIVE - "+hosts.length+" viewers can see you" : "✅ Online - "+hosts.length+" live now - Tap GO LIVE");
+}
+},1500);
+
+let cleanupIv=setInterval(function(){
+setHosts(function(prev:any){
+let now=Date.now();
+return prev.filter(function(h:any){return now-h.time<15000;});
+});
+},3000);
+
+return;
+});
+
+// Trystero for video only
 import("trystero").then(function(m){
 let jr=m.joinRoom;
-setDebug("Connecting to global network...");
-let lobby=jr({appId:"jhummkatok-prod-v1-stable"},"global-presence-v27");
-lobbyRef.current=lobby;
-let a=lobby.makeAction("live");
-let send=a[0];let get=a[1];
-function ann(){
-let data={id:myId,name:user.name,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()};
-send(data);
-console.log("Announcing:",data);
-}
-ann();
-let iv=setInterval(ann,1500);
-let mp={} as any;
-get(function(d:any){
-console.log("Found peer:",d);
-if(!d||!d.id)return;
-if(d.id===myId)return;
-mp[d.id]=d;
-let now=Date.now();
-let all=Object.values(mp).filter(function(h:any){
-let alive=now-h.time<20000;
-if(!alive)delete mp[h.id];
-return alive && h.isLive;
-});
-setHosts(all as any);
-setDebug("Found "+all.length+" live peers");
-});
-let cr=jr({appId:"jhummkatok-prod-v1-stable"},room);
+let cr=jr({appId:"jhumm-v28-video-only",trackerUrls:["wss://tracker.openwebtorrent.com","wss://tracker.btorrent.xyz","wss://tracker.files.fm:7073/announce"]},room);
 let ca=cr.makeAction("chat");
-chatSend.current=ca[0];
-ca[1](function(msg:any){setChats(function(p:any){return [...p.slice(-30),msg];});});
+chatSend.current={pub:function(d:any){if(mqttRef.current)mqttRef.current.publish("jhummkatok/chat/"+room,JSON.stringify(d));}};
 let ga=cr.makeAction("gift");
-giftSend.current=ga[0];
-ga[1](function(g:any){
-let id=Date.now()+Math.random();
-setGifts(function(p:any){return [...p,{id:id,emoji:g.emoji}];});
-setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){return x.id!==id;});});},3500);
+giftSend.current={pub:function(d:any){if(mqttRef.current)mqttRef.current.publish("jhummkatok/gift/"+room,JSON.stringify(d));}};
 });
-return function(){clearInterval(iv);};
-});
-},[user,myId,isLive,room]);
+
+return function(){mounted=false; if(mqttRef.current){try{mqttRef.current.end();}catch(e){}}};
+
+},[user,myId,isLive,room,hosts.length]);
 
 function upAvatar(e:any){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=function(){setAvatar(r.result as string);};r.readAsDataURL(f);}
 function startOtp(){if(!name||!phone||!avatar){alert("Need Name Phone Photo");return;}let o=Math.floor(100000+Math.random()*900000).toString();setGenOtp(o);setStep(1);}
@@ -86,53 +114,29 @@ let s=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
 streamRef.current=s;
 if(localRef.current)localRef.current.srcObject=s;
 setIsLive(true);
-setDebug("Going LIVE, announcing...");
-setTimeout(function(){
-if(lobbyRef.current){
-let a=lobbyRef.current.makeAction("live");
-let send=a[0];
-send({id:myId,name:user.name,avatar:user.avatar,room:room,isLive:true,time:Date.now()});
-}
-},500);
 let m=await import("trystero");
-let hr=m.joinRoom({appId:"jhummkatok-prod-v1-stable"},"host-"+myId);
+let hr=m.joinRoom({appId:"jhumm-v28-video-only",trackerUrls:["wss://tracker.openwebtorrent.com","wss://tracker.btorrent.xyz"]},"host-"+myId);
 hostRef.current=hr;
 hr.addStream(s);
-hr.onPeerJoin(function(pid:any){
-console.log("Viewer joined you! Unlimited:",pid);
-hr.addStream(streamRef.current);
-setDebug("Viewer joined: "+pid);
-});
+hr.onPeerJoin(function(){hr.addStream(streamRef.current);});
 }
 
 async function joinP(h:any){
 if(h.id===myId)return;
 if(viewRef.current){try{viewRef.current.leave();}catch(e){}}
 setWatch(h);
-setDebug("Joining "+h.name+"...");
 let m=await import("trystero");
-let vr=m.joinRoom({appId:"jhummkatok-prod-v1-stable"},"host-"+h.id);
+let vr=m.joinRoom({appId:"jhumm-v28-video-only",trackerUrls:["wss://tracker.openwebtorrent.com","wss://tracker.btorrent.xyz"]},"host-"+h.id);
 viewRef.current=vr;
 vr.onPeerStream(function(st:any){
-if(remoteRef.current){
-remoteRef.current.srcObject=st;
-remoteRef.current.play().catch(()=>{});
-setDebug("Connected to "+h.name);
-}
+if(remoteRef.current){remoteRef.current.srcObject=st;remoteRef.current.play().catch(()=>{});}
 });
-setTimeout(function(){if(!remoteRef.current||!remoteRef.current.srcObject){setDebug("Retrying connection...");}},3000);
 }
 
-function sendChat(){if(!chatIn.trim())return;if(chatSend.current)chatSend.current({id:Date.now(),name:user.name,text:chatIn});setChatIn("");}
-function sendGift(e:any){
-if(giftSend.current)giftSend.current({emoji:e});
-if(chatSend.current)chatSend.current({id:Date.now(),name:"GIFT",text:user.name+" sent "+e});
-let id=Date.now()+Math.random();
-setGifts(function(p:any){return [...p,{id:id,emoji:e}];});
-setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){return x.id!==id;});});},3500);
-}
+function sendChat(){if(!chatIn.trim())return;let data={id:Date.now(),name:user.name,text:chatIn};if(mqttRef.current)mqttRef.current.publish("jhummkatok/chat/"+room,JSON.stringify(data));setChatIn("");}
+function sendGift(e:any){if(mqttRef.current)mqttRef.current.publish("jhummkatok/gift/"+room,JSON.stringify({emoji:e,from:user.name}));let id=Date.now()+Math.random();setGifts(function(p:any){return [...p,{id:id,emoji:e}];});setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){return x.id!==id;});});},3500);}
 
-let otherHosts=hosts;
+let otherHosts=hosts.filter(function(h:any){return h.id!==myId;});
 
 return(
 <div className="bg-black text-white min-h-screen pb-24">
@@ -141,7 +145,7 @@ return(
 {!user && (
 <div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-zinc-900 via-black to-pink-950">
 <div className="bg-zinc-900 p-6 rounded-[28px] w-full max-w-sm border border-zinc-800">
-<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V27 FIXED</p><p className="text-xs text-zinc-500 mt-1">Fixed Discovery • Unlimited</p></div>
+<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V28 SERVER</p><p className="text-xs text-zinc-500 mt-1">Bigo Global Server • 100% Works</p></div>
 {step===0 ? (
 <div>
 <div className="flex justify-center mt-5"><label className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-[3px] border-pink-600 cursor-pointer">{avatar ? <img src={avatar} className="w-full h-full object-cover" alt="av"/> : <span className="text-sm text-zinc-500">+ PHOTO</span>}<input type="file" accept="image/*" onChange={upAvatar} className="hidden"/></label></div>
@@ -170,37 +174,36 @@ return(
 <div className="p-2 flex gap-2 items-center">
 {!isLive ? <button onClick={goLive} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 py-2.5 rounded-full text-sm font-bold">🔴 GO LIVE</button> : <button onClick={function(){if(streamRef.current)streamRef.current.getTracks().forEach(function(t:any){t.stop();});if(hostRef.current)hostRef.current.leave();setIsLive(false);}} className="bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-full text-sm">⬛ STOP</button>}
 <div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{otherHosts.length} LIVE</span></div>
-<button onClick={function(){if(lobbyRef.current){let a=lobbyRef.current.makeAction("live");a[0]({id:myId,name:user.name,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()});setDebug("Force announced!");}}} className="bg-zinc-800 px-2 py-1 rounded-full text-[10px]">↻ Refresh</button>
 <div className="ml-auto flex items-center gap-2"><img src={user.avatar} className="w-7 h-7 rounded-full border border-pink-600" alt="me"/><button onClick={function(){localStorage.clear();location.reload();}} className="bg-zinc-900 px-3 py-1.5 rounded-full text-xs border border-zinc-800">{user.name}</button></div>
 </div>
 
-<div className="px-2 py-1"><p className="text-[10px] text-zinc-500 font-mono">{debug}</p></div>
+<div className="px-2 py-1"><p className="text-[11px] text-green-400 font-mono bg-zinc-900 px-2 py-1 rounded-full border border-zinc-800 inline-block">{status}</p></div>
 
 <div className="p-2 space-y-2">
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800">
 <video ref={localRef} autoPlay muted playsInline className="w-full h-48 object-cover"></video>
-{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - {otherHosts.length} viewers can join</div>}
+{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - Visible to ALL</div>}
 </div>
 
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[320px]">
 <video ref={remoteRef} autoPlay playsInline className="w-full h-[340px] object-cover bg-black"></video>
-{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">{otherHosts.length>0 ? "🔥" : "👋"}</p><p className="text-white font-bold">{otherHosts.length>0 ? otherHosts.length+" PEOPLE LIVE - TAP BELOW!" : "No one live yet"}</p><p className="text-zinc-500 text-xs text-center mt-1">{otherHosts.length>0 ? "Everyone live appears below - Tap any to join like Bigo" : "Be first to go LIVE!"}</p></div>}
-{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span><span className="text-xs bg-red-600 px-2 py-0.5 rounded-full">LIVE</span></div><button onClick={function(){if(viewRef.current)viewRef.current.leave();setWatch(null);setDebug("Left "+watch.name);}} className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}
+{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">{otherHosts.length>0 ? "🔥" : "👋"}</p><p className="text-white font-bold text-center">{otherHosts.length>0 ? otherHosts.length+" PEOPLE LIVE - TAP BELOW TO JOIN!" : "No one live yet - Be first!"}</p></div>}
+{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span><span className="text-xs bg-red-600 px-2 py-0.5 rounded-full">LIVE</span></div><button onClick={function(){if(viewRef.current)viewRef.current.leave();setWatch(null);}} className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}
 </div>
 </div>
 
 <div className="px-2 mt-4">
-<p className="text-xs text-zinc-400 mb-2 font-black">🔥 ALL LIVE NOW - TAP ANY TO JOIN ({otherHosts.length}) - BIGO STYLE</p>
-{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">No one live yet</p><p className="text-zinc-600 text-xs mt-1">Open on 2 phones with different names, both tap GO LIVE - You will see each other here!</p><button onClick={function(){window.location.reload();}} className="mt-3 bg-zinc-800 px-4 py-2 rounded-full text-xs">↻ Hard Refresh</button></div> : (
+<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW - {otherHosts.length} PEOPLE - TAP TO JOIN (BIGO STYLE)</p>
+{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting for friends...</p><p className="text-zinc-600 text-xs mt-2">Tell your friend: Open jhummkatok.com → GO LIVE → You will see him here in 3 seconds! Works on any SIM!</p></div> : (
 <div className="grid grid-cols-3 gap-2">
-{otherHosts.map(function(h:any){return(<div key={h.id} onClick={function(){joinP(h);}} className="bg-zinc-900 border-2 border-pink-600/30 rounded-2xl p-3 text-center cursor-pointer hover:border-pink-600 active:scale-95 shadow-lg"><div className="relative"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-zinc-900 animate-pulse"></div></div><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[10px] text-zinc-500">{h.room}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">JOIN NOW 🔥</div></div>);})}
+{otherHosts.map(function(h:any){return(<div key={h.id} onClick={function(){joinP(h);}} className="bg-zinc-900 border-2 border-pink-600 rounded-2xl p-3 text-center cursor-pointer hover:bg-zinc-800 active:scale-95"><div className="relative"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-zinc-900 animate-pulse"></div></div><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[10px] text-zinc-500">{h.room}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">JOIN {h.name.split(" ")[0]} 🔥</div></div>);})}
 </div>
 )}
 </div>
 
 <div className="px-2 mt-4">
 <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl h-28 overflow-y-auto p-3 space-y-1">
-{chats.length===0 && <p className="text-zinc-600 text-xs text-center mt-8">💬 Chat</p>}
+{chats.length===0 && <p className="text-zinc-600 text-xs text-center mt-8">💬 Chat with all live viewers</p>}
 {chats.map(function(c:any){return(<div key={c.id} className="text-xs"><b className={c.name==="GIFT" ? "text-yellow-400" : "text-pink-400"}>{c.name}: </b><span className="text-zinc-200">{c.text}</span></div>);})}
 </div>
 <div className="flex gap-2 mt-2"><input value={chatIn} onChange={function(e:any){setChatIn(e.target.value);}} onKeyDown={function(e:any){if(e.key==="Enter")sendChat();}} placeholder="Chat..." className="flex-1 p-3.5 bg-zinc-900 border border-zinc-800 rounded-full text-sm outline-none focus:border-pink-600"/><button onClick={sendChat} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 rounded-full text-sm font-bold">Send</button></div>
