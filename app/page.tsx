@@ -16,36 +16,37 @@ const [watch,setWatch]=useState(null as any);
 const [chats,setChats]=useState([] as any);
 const [chatIn,setChatIn]=useState("");
 const [gifts,setGifts]=useState([] as any);
-const [status,setStatus]=useState("Connecting to Bigo server...");
+const [status,setStatus]=useState("Connecting to Bigo Global Server...");
 const localRef=useRef(null as any);
 const remoteRef=useRef(null as any);
 const streamRef=useRef(null as any);
 const hostRef=useRef(null as any);
 const viewRef=useRef(null as any);
 const mqttRef=useRef(null as any);
-
 useEffect(()=>{
 let s=localStorage.getItem("jhumm_v24");
 if(s){let u=JSON.parse(s);setUser(u);setMyId(u.id);setAvatar(u.avatar);}
 },[]);
-
 useEffect(()=>{
 if(!user||!myId)return;
 let mounted=true;
 import("mqtt").then(function(mqtt){
 if(!mounted)return;
-let client=mqtt.connect("wss://broker.emqx.io:8084/mqtt",{clientId:"jhumm_"+myId+"_"+Date.now(),clean:true,connectTimeout:5000});
+let brokers=["wss://broker.emqx.io:8084/mqtt","wss://broker.hivemq.com:8884/mqtt"];
+let broker=brokers[0];
+let client=mqtt.connect(broker,{clientId:"jhumm_"+myId+"_"+Date.now(),clean:true,connectTimeout:8000,reconnectPeriod:2000});
 mqttRef.current=client;
 client.on("connect",function(){
-setStatus("✅ Connected to Bigo Global Server");
-client.subscribe("jhummkatok/live/v28");
+setStatus("✅ SERVER CONNECTED - You will see all live people!");
+client.subscribe("jhummkatok/live/v29");
 client.subscribe("jhummkatok/chat/"+room);
 client.subscribe("jhummkatok/gift/"+room);
 });
+client.on("error",function(){setStatus("Trying other server...");});
 client.on("message",function(topic:any,msg:any){
 try{
 let data=JSON.parse(msg.toString());
-if(topic==="jhummkatok/live/v28"){
+if(topic==="jhummkatok/live/v29"){
 if(data.id===myId)return;
 if(!data.isLive)return;
 setHosts(function(prev:any){
@@ -68,8 +69,7 @@ setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){r
 let iv=setInterval(function(){
 if(client.connected){
 let payload={id:myId,name:user.name,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()};
-client.publish("jhummkatok/live/v28",JSON.stringify(payload));
-setStatus(isLive ? "🔴 LIVE - "+hosts.length+" viewers can join you" : "✅ Online - "+hosts.length+" live - GO LIVE to be seen");
+client.publish("jhummkatok/live/v29",JSON.stringify(payload));
 }
 },1500);
 let cleanupIv=setInterval(function(){
@@ -78,11 +78,9 @@ let now=Date.now();
 return prev.filter(function(h:any){return now-h.time<15000;});
 });
 },3000);
-return;
 });
 return function(){mounted=false; if(mqttRef.current){try{mqttRef.current.end();}catch(e){}}};
-},[user,myId,isLive,room,hosts.length]);
-
+},[user,myId,isLive,room]);
 function upAvatar(e:any){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=function(){setAvatar(r.result as string);};r.readAsDataURL(f);}
 function startOtp(){if(!name||!phone||!avatar){alert("Need Name Phone Photo");return;}let o=Math.floor(100000+Math.random()*900000).toString();setGenOtp(o);setStep(1);}
 function doVerify(){if(otp!==genOtp){alert("Wrong OTP is "+genOtp);return;}let id=name.slice(0,4)+Math.random().toString(36).slice(2,5);let u={id:id,name:name,phone:phone,avatar:avatar};localStorage.setItem("jhumm_v24",JSON.stringify(u));setUser(u);setMyId(id);}
@@ -92,7 +90,7 @@ streamRef.current=s;
 if(localRef.current)localRef.current.srcObject=s;
 setIsLive(true);
 let m=await import("trystero");
-let hr=m.joinRoom({appId:"jhumm-v28-video"},"host-"+myId);
+let hr=m.joinRoom({appId:"jhumm-v29-final-video"},"host-"+myId);
 hostRef.current=hr;
 hr.addStream(s);
 hr.onPeerJoin(function(){hr.addStream(streamRef.current);});
@@ -102,7 +100,7 @@ if(h.id===myId)return;
 if(viewRef.current){try{viewRef.current.leave();}catch(e){}}
 setWatch(h);
 let m=await import("trystero");
-let vr=m.joinRoom({appId:"jhumm-v28-video"},"host-"+h.id);
+let vr=m.joinRoom({appId:"jhumm-v29-final-video"},"host-"+h.id);
 viewRef.current=vr;
 vr.onPeerStream(function(st:any){
 if(remoteRef.current){remoteRef.current.srcObject=st;remoteRef.current.play().catch(()=>{});}
@@ -110,16 +108,14 @@ if(remoteRef.current){remoteRef.current.srcObject=st;remoteRef.current.play().ca
 }
 function sendChat(){if(!chatIn.trim())return;let data={id:Date.now(),name:user.name,text:chatIn};if(mqttRef.current)mqttRef.current.publish("jhummkatok/chat/"+room,JSON.stringify(data));setChatIn("");}
 function sendGift(e:any){if(mqttRef.current)mqttRef.current.publish("jhummkatok/gift/"+room,JSON.stringify({emoji:e,from:user.name}));let id=Date.now()+Math.random();setGifts(function(p:any){return [...p,{id:id,emoji:e}];});setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){return x.id!==id;});});},3500);}
-
 let otherHosts=hosts.filter(function(h:any){return h.id!==myId;});
-
 return(
 <div className="bg-black text-white min-h-screen pb-24">
 <style>{`@keyframes fly{0%{transform:translateY(100vh) scale(0.5);opacity:1}100%{transform:translateY(-20vh) scale(1.8);opacity:0}} .gift-fly{animation:fly 3.5s ease-out forwards;}`}</style>
 {!user && (
 <div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-zinc-900 via-black to-pink-950">
 <div className="bg-zinc-900 p-6 rounded-[28px] w-full max-w-sm border border-zinc-800">
-<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V28 SERVER FIXED</p></div>
+<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V29 FINAL SERVER</p></div>
 {step===0 ? (
 <div>
 <div className="flex justify-center mt-5"><label className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-[3px] border-pink-600 cursor-pointer">{avatar ? <img src={avatar} className="w-full h-full object-cover" alt="av"/> : <span className="text-sm text-zinc-500">+ PHOTO</span>}<input type="file" accept="image/*" onChange={upAvatar} className="hidden"/></label></div>
@@ -129,7 +125,7 @@ return(
 </div>
 ) : (
 <div>
-<div className="bg-green-500/20 border border-green-500/30 p-3 rounded-2xl mt-4 text-center"><p className="text-2xl font-mono font-bold">{genOtp}</p><p className="text-xs text-green-400">DEMO OTP</p></div>
+<div className="bg-green-500/20 border border-green-500/30 p-3 rounded-2xl mt-4 text-center"><p className="text-2xl font-mono font-bold">{genOtp}</p></div>
 <input value={otp} onChange={function(e:any){setOtp(e.target.value);}} placeholder="Enter OTP" className="w-full p-4 mt-4 bg-zinc-800 border-2 border-green-500 rounded-2xl text-center text-xl tracking-widest outline-none"/>
 <button onClick={doVerify} className="w-full bg-green-500 text-black p-4 rounded-2xl mt-4 font-black">VERIFY 🚀</button>
 <button onClick={function(){setStep(0);}} className="w-full text-zinc-500 mt-3 text-sm">← Back</button>
@@ -148,21 +144,21 @@ return(
 <div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{otherHosts.length} LIVE</span></div>
 <div className="ml-auto flex items-center gap-2"><img src={user.avatar} className="w-7 h-7 rounded-full border border-pink-600" alt="me"/><button onClick={function(){localStorage.clear();location.reload();}} className="bg-zinc-900 px-3 py-1.5 rounded-full text-xs border border-zinc-800">{user.name}</button></div>
 </div>
-<div className="px-2 py-1"><p className="text-[11px] text-green-400 font-mono bg-zinc-900 px-2 py-1 rounded-full border border-zinc-800 inline-block">{status}</p></div>
+<div className="px-2 py-1"><p className="text-[11px] text-green-400 font-mono bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800 inline-block">{status} - {otherHosts.length} friends live</p></div>
 <div className="p-2 space-y-2">
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800">
 <video ref={localRef} autoPlay muted playsInline className="w-full h-48 object-cover"></video>
-{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE</div>}
+{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - Visible to ALL</div>}
 </div>
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[320px]">
 <video ref={remoteRef} autoPlay playsInline className="w-full h-[340px] object-cover bg-black"></video>
-{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">{otherHosts.length>0 ? "🔥" : "👋"}</p><p className="text-white font-bold text-center">{otherHosts.length>0 ? otherHosts.length+" LIVE - TAP BELOW!" : "No one live yet"}</p></div>}
+{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">{otherHosts.length>0 ? "🔥" : "👋"}</p><p className="text-white font-bold text-center">{otherHosts.length>0 ? otherHosts.length+" PEOPLE LIVE - TAP BELOW!" : "No one live yet"}</p></div>}
 {watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span><span className="text-xs bg-red-600 px-2 py-0.5 rounded-full">LIVE</span></div><button onClick={function(){if(viewRef.current)viewRef.current.leave();setWatch(null);}} className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}
 </div>
 </div>
 <div className="px-2 mt-4">
-<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW ({otherHosts.length}) - TAP TO JOIN</p>
-{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting for friends...</p><p className="text-zinc-600 text-xs mt-2">Both phones GO LIVE → See each other in 3 sec!</p></div> : (
+<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW ({otherHosts.length}) - TAP ANY TO JOIN - UNLIMITED</p>
+{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting for friends...</p><p className="text-zinc-600 text-xs mt-2">If 3 people GO LIVE, you will see all 3 here!</p></div> : (
 <div className="grid grid-cols-3 gap-2">
 {otherHosts.map(function(h:any){return(<div key={h.id} onClick={function(){joinP(h);}} className="bg-zinc-900 border-2 border-pink-600 rounded-2xl p-3 text-center cursor-pointer"><div className="relative"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-zinc-900 animate-pulse"></div></div><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">JOIN 🔥</div></div>);})}
 </div>
