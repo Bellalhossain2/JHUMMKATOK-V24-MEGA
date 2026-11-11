@@ -18,19 +18,22 @@ const [watch,setWatch]=useState(null as any);
 const [chats,setChats]=useState([] as any);
 const [chatIn,setChatIn]=useState("");
 const [gifts,setGifts]=useState([] as any);
-const [status,setStatus]=useState("Connecting to Jhummkatok Server...");
+const [status,setStatus]=useState("Connecting...");
 const localRef=useRef(null as any);
 const remoteRef=useRef(null as any);
 const streamRef=useRef(null as any);
-const hostRef=useRef(null as any);
-const viewRef=useRef(null as any);
+const peerRef=useRef(null as any);
+const callRef=useRef(null as any);
+
 useEffect(()=>{
 let s=localStorage.getItem("jhumm_v32");
 if(s){let u=JSON.parse(s);setUser(u);setMyId(u.id);setAvatar(u.avatar);}
 },[]);
+
 useEffect(()=>{
 if(!user||!myId)return;
-setStatus("✅ Connected to Jhummkatok Own Server!");
+setStatus("✅ Own Server Connected!");
+// Presence via own API
 let iv=setInterval(async function(){
 try{
 let payload={id:myId,name:user.name,email:user.email,country:user.country,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()};
@@ -38,42 +41,76 @@ let res=await fetch("/api/presence",{method:"POST",headers:{"Content-Type":"appl
 let all=await res.json();
 let filtered=all.filter(function(h:any){return h.id!==myId && h.isLive;});
 setHosts(filtered);
-setStatus("✅ LIVE: "+filtered.length+" friends online - Own Server!");
-}catch(e){setStatus("Connecting...");}
-},2000);
-let chatIv=setInterval(async function(){
-try{
-let res=await fetch("/api/presence");
-let all=await res.json();
-// chat via same server using special id
+setStatus("✅ LIVE: "+filtered.length+" online | "+user.country);
 }catch(e){}
 },2000);
-return function(){clearInterval(iv);clearInterval(chatIv);};
+// PeerJS for video - cloud server works everywhere!
+import("peerjs").then(function(m){
+let Peer=(m as any).default || (m as any).Peer || m;
+let peer=new Peer(myId,{
+config:{iceServers:[
+{urls:"stun:stun.l.google.com:19302"},
+{urls:"stun:global.stun.twilio.com:3478"},
+{urls:"turn:openrelay.metered.ca:80",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"},
+{urls:"turn:openrelay.metered.ca:443",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"},
+{urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"}
+]}
+});
+peerRef.current=peer;
+peer.on("open",function(){setStatus("✅ Video Server Ready - Tap GO LIVE!");});
+peer.on("call",function(call:any){
+call.answer(streamRef.current);
+call.on("stream",function(rStream:any){
+if(remoteRef.current){
+remoteRef.current.srcObject=rStream;
+remoteRef.current.play().catch(()=>{});
+setWatch({name:call.peer,id:call.peer});
+}
+});
+callRef.current=call;
+});
+peer.on("error",function(err:any){console.log(err);});
+});
+return function(){clearInterval(iv); if(peerRef.current)peerRef.current.destroy();};
 },[user,myId,isLive,room]);
+
 function upAvatar(e:any){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=function(){setAvatar(r.result as string);};r.readAsDataURL(f);}
 function startOtp(){if(!name||!email||!phone||!avatar){alert("Need Name Email Phone Photo");return;}let o=Math.floor(100000+Math.random()*900000).toString();setGenOtp(o);setStep(1);}
-function doVerify(){if(otp!==genOtp){alert("Wrong OTP is "+genOtp);return;}let id=name.slice(0,4)+Math.random().toString(36).slice(2,5);let u={id:id,name:name,email:email,country:country,phone:phone,avatar:avatar};localStorage.setItem("jhumm_v32",JSON.stringify(u));setUser(u);setMyId(id);}
+function doVerify(){if(otp!==genOtp){alert("Wrong OTP "+genOtp);return;}let id=name.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,6)+Math.random().toString(36).slice(2,5);let u={id:id,name:name,email:email,country:country,phone:phone,avatar:avatar};localStorage.setItem("jhumm_v32",JSON.stringify(u));setUser(u);setMyId(id);}
 async function goLive(){
-let s=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+let s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:true});
 streamRef.current=s;
-if(localRef.current)localRef.current.srcObject=s;
+if(localRef.current){localRef.current.srcObject=s;localRef.current.play().catch(()=>{});}
 setIsLive(true);
-let m=await import("trystero");
-let hr=m.joinRoom({appId:"jhumm-v33-video-fixed",rtcConfig:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun.relay.metered.ca:80"},{urls:"turn:a.relay.metered.ca:80",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:80?transport=tcp",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:443",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"}]}},"host-"+myId); 
-hostRef.current=hr;
-hr.addStream(s);
-hr.onPeerJoin(function(){hr.addStream(streamRef.current);});
 }
 async function joinP(h:any){
 if(h.id===myId)return;
-if(viewRef.current){try{viewRef.current.leave();}catch(e){}}
 setWatch(h);
-let m=await import("trystero");
-let vr=m.joinRoom({appId:"jhumm-v33-video-fixed",rtcConfig:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun.relay.metered.ca:80"},{urls:"turn:a.relay.metered.ca:80",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:80?transport=tcp",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:443",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"}]}},"host-"+h.id); 
-viewRef.current=vr;
-vr.onPeerStream(function(st:any){
-if(remoteRef.current){remoteRef.current.srcObject=st;setTimeout(()=>{if(remoteRef.current) remoteRef.current.play().catch(()=>{});},500); remoteRef.current.play().catch(()=>{});}
+try{
+let m=await import("peerjs");
+if(!peerRef.current){alert("Video server not ready, wait 3 sec");return;}
+// call host with our stream (or empty if not live)
+let streamToSend=streamRef.current || await navigator.mediaDevices.getUserMedia({video:true,audio:true}).catch(()=>null);
+if(streamToSend && !streamRef.current){
+streamRef.current=streamToSend;
+if(localRef.current){localRef.current.srcObject=streamToSend;}
+}
+let call=peerRef.current.call(h.id, streamToSend || new MediaStream());
+callRef.current=call;
+call.on("stream",function(rStream:any){
+if(remoteRef.current){
+remoteRef.current.srcObject=rStream;
+setTimeout(function(){remoteRef.current.play().catch(()=>{});},200);
+}
 });
+call.on("close",function(){setWatch(null);});
+call.on("error",function(){alert("Connection failed, try again");});
+}catch(e){alert("Join failed: "+e);}
+}
+function leaveWatch(){
+if(callRef.current)callRef.current.close();
+if(remoteRef.current)remoteRef.current.srcObject=null;
+setWatch(null);
 }
 function sendChat(){if(!chatIn.trim())return;let data={id:Date.now(),name:user.name,text:chatIn};setChats(function(p:any){return [...p.slice(-30),data];});setChatIn("");}
 function sendGift(e:any){let id=Date.now()+Math.random();setGifts(function(p:any){return [...p,{id:id,emoji:e}];});setChats(function(p:any){return [...p.slice(-30),{id:id,name:"GIFT",text:user.name+" sent "+e}];});setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){return x.id!==id;});});},3500);}
@@ -84,12 +121,12 @@ return(
 {!user && (
 <div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-zinc-900 via-black to-pink-950">
 <div className="bg-zinc-900 p-6 rounded-[28px] w-full max-w-sm border border-zinc-800">
-<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V32 OWN SERVER</p><p className="text-xs text-zinc-500">Email + Country Login + Own API</p></div>
+<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V34 PEERJS VIDEO</p><p className="text-xs text-green-400">Email + Country + Own Server + PeerJS</p></div>
 {step===0 ? (
 <div>
 <div className="flex justify-center mt-5"><label className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-[3px] border-pink-600 cursor-pointer">{avatar ? <img src={avatar} className="w-full h-full object-cover" alt="av"/> : <span className="text-sm text-zinc-500">+ PHOTO</span>}<input type="file" accept="image/*" onChange={upAvatar} className="hidden"/></label></div>
 <input value={name} onChange={function(e:any){setName(e.target.value);}} placeholder="Full Name" className="w-full p-4 mt-5 bg-zinc-800 rounded-2xl outline-none border border-zinc-700 focus:border-pink-600"/>
-<input value={email} onChange={function(e:any){setEmail(e.target.value);}} placeholder="Email Address" className="w-full p-4 mt-3 bg-zinc-800 rounded-2xl outline-none border border-zinc-700 focus:border-pink-600"/>
+<input value={email} onChange={function(e:any){setEmail(e.target.value);}} placeholder="Email" className="w-full p-4 mt-3 bg-zinc-800 rounded-2xl outline-none border border-zinc-700 focus:border-pink-600"/>
 <select value={country} onChange={function(e:any){setCountry(e.target.value);}} className="w-full p-4 mt-3 bg-zinc-800 rounded-2xl outline-none border border-zinc-700 focus:border-pink-600"><option>Bangladesh</option><option>USA</option><option>UK</option><option>India</option><option>Canada</option><option>Saudi Arabia</option><option>UAE</option><option>Malaysia</option><option>Other</option></select>
 <input value={phone} onChange={function(e:any){setPhone(e.target.value);}} placeholder="Phone" className="w-full p-4 mt-3 bg-zinc-800 rounded-2xl outline-none border border-zinc-700 focus:border-pink-600"/>
 <button onClick={startOtp} className="w-full bg-gradient-to-r from-pink-600 to-purple-600 p-4 rounded-2xl mt-4 font-bold">SEND OTP →</button>
@@ -111,27 +148,27 @@ return(
 {Array.from({length:12},function(_,i){let r="jhumm-room-"+(i+1);let isA=room===r;return(<button key={r} onClick={function(){setRoom(r);}} className={isA ? "bg-gradient-to-r from-pink-600 to-purple-600 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap" : "bg-zinc-800 px-4 py-1.5 rounded-full text-xs whitespace-nowrap text-zinc-400"}>{r==="jhumm-room-1" ? "🔥 1 AUTO" : i+1}</button>);})}
 </div>
 <div className="p-2 flex gap-2 items-center">
-{!isLive ? <button onClick={goLive} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 py-2.5 rounded-full text-sm font-bold">🔴 GO LIVE</button> : <button onClick={function(){if(streamRef.current)streamRef.current.getTracks().forEach(function(t:any){t.stop();});if(hostRef.current)hostRef.current.leave();setIsLive(false);}} className="bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-full text-sm">⬛ STOP</button>}
+{!isLive ? <button onClick={goLive} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 py-2.5 rounded-full text-sm font-bold">🔴 GO LIVE</button> : <button onClick={function(){if(streamRef.current)streamRef.current.getTracks().forEach(function(t:any){t.stop();});setIsLive(false);}} className="bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-full text-sm">⬛ STOP</button>}
 <div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{otherHosts.length} LIVE</span></div>
 <div className="ml-auto flex items-center gap-2"><img src={user.avatar} className="w-7 h-7 rounded-full border border-pink-600" alt="me"/><button onClick={function(){localStorage.clear();location.reload();}} className="bg-zinc-900 px-3 py-1.5 rounded-full text-xs border border-zinc-800">{user.name}</button></div>
 </div>
-<div className="px-2 py-1"><p className="text-[11px] text-green-400 font-mono bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800 inline-block">{status} | {user.country}</p></div>
+<div className="px-2 py-1"><p className="text-[11px] text-green-400 font-mono bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800 inline-block">{status}</p></div>
 <div className="p-2 space-y-2">
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800">
-<video ref={localRef} autoPlay muted playsInline className="w-full h-48 object-cover"></video>
-{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - {user.country}</div>}
+<video ref={localRef} autoPlay muted playsInline className="w-full h-48 object-cover bg-zinc-900"></video>
+{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - {user.country} - {myId}</div>}
 </div>
-<div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[320px]">
+<div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[340px]">
 <video ref={remoteRef} autoPlay playsInline className="w-full h-[340px] object-cover bg-black"></video>
-{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">{otherHosts.length>0 ? "🔥" : "👋"}</p><p className="text-white font-bold text-center">{otherHosts.length>0 ? otherHosts.length+" LIVE - TAP BELOW!" : "No one live - Be first!"}</p></div>}
-{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name} • {watch.country}</span><span className="text-xs bg-red-600 px-2 py-0.5 rounded-full">LIVE</span></div><button onClick={function(){if(viewRef.current)viewRef.current.leave();setWatch(null);}} className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}
+{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">{otherHosts.length>0 ? "🔥" : "👋"}</p><p className="text-white font-bold text-center">{otherHosts.length>0 ? otherHosts.length+" LIVE - TAP BELOW TO SEE!" : "No one live"}</p><p className="text-zinc-500 text-xs mt-2 text-center">Tap avatar below to see video + hear talk</p></div>}
+{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name} • {watch.country || "Live"}</span><span className="text-xs bg-red-600 px-2 py-0.5 rounded-full">LIVE</span></div><button onClick={leaveWatch} className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}
 </div>
 </div>
 <div className="px-2 mt-4">
-<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW ({otherHosts.length}) - BIGO STYLE - TAP ANY TO JOIN</p>
-{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting... Your own server will show all live here!</p></div> : (
+<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW ({otherHosts.length}) - PEERJS - TAP ANY TO SEE VIDEO</p>
+{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting for friends... Your OWN server will show all!</p></div> : (
 <div className="grid grid-cols-3 gap-2">
-{otherHosts.map(function(h:any){return(<div key={h.id} onClick={function(){joinP(h);}} className="bg-zinc-900 border-2 border-pink-600 rounded-2xl p-3 text-center cursor-pointer"><div className="relative"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-zinc-900 animate-pulse"></div></div><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[9px] text-zinc-400 truncate">{h.country} • {h.email?.slice(0,10)}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">JOIN 🔥</div></div>);})}
+{otherHosts.map(function(h:any){return(<div key={h.id} onClick={function(){joinP(h);}} className="bg-zinc-900 border-2 border-pink-600 rounded-2xl p-3 text-center cursor-pointer active:scale-95"><div className="relative"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-zinc-900 animate-pulse"></div></div><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[9px] text-zinc-400 truncate">{h.country}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">SEE VIDEO 🔥</div></div>);})}
 </div>
 )}
 </div>
