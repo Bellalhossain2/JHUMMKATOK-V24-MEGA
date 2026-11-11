@@ -16,6 +16,7 @@ const [watch,setWatch]=useState(null as any);
 const [chats,setChats]=useState([] as any);
 const [chatIn,setChatIn]=useState("");
 const [gifts,setGifts]=useState([] as any);
+const [debug,setDebug]=useState("Starting...");
 const localRef=useRef(null as any);
 const remoteRef=useRef(null as any);
 const streamRef=useRef(null as any);
@@ -23,6 +24,7 @@ const hostRef=useRef(null as any);
 const viewRef=useRef(null as any);
 const chatSend=useRef(null as any);
 const giftSend=useRef(null as any);
+const lobbyRef=useRef(null as any);
 
 useEffect(()=>{
 let s=localStorage.getItem("jhumm_v24");
@@ -33,20 +35,34 @@ useEffect(()=>{
 if(!user||!myId)return;
 import("trystero").then(function(m){
 let jr=m.joinRoom;
-let lobby=jr({appId:"jhumm-v26-unlimited-2026"},"jhumm-global-lobby");
-let a=lobby.makeAction("presence");
+setDebug("Connecting to global network...");
+let lobby=jr({appId:"jhummkatok-prod-v1-stable"},"global-presence-v27");
+lobbyRef.current=lobby;
+let a=lobby.makeAction("live");
 let send=a[0];let get=a[1];
-function ann(){send({id:myId,name:user.name,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()});}
+function ann(){
+let data={id:myId,name:user.name,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()};
+send(data);
+console.log("Announcing:",data);
+}
 ann();
-let iv=setInterval(ann,1000);
+let iv=setInterval(ann,1500);
 let mp={} as any;
 get(function(d:any){
+console.log("Found peer:",d);
+if(!d||!d.id)return;
 if(d.id===myId)return;
 mp[d.id]=d;
-let all=Object.values(mp).filter(function(h:any){let alive=Date.now()-h.time<10000;if(!alive)delete mp[h.id];return alive && h.isLive;});
-setHosts(all as any);
+let now=Date.now();
+let all=Object.values(mp).filter(function(h:any){
+let alive=now-h.time<20000;
+if(!alive)delete mp[h.id];
+return alive && h.isLive;
 });
-let cr=jr({appId:"jhumm-v26-unlimited-2026"},room);
+setHosts(all as any);
+setDebug("Found "+all.length+" live peers");
+});
+let cr=jr({appId:"jhummkatok-prod-v1-stable"},room);
 let ca=cr.makeAction("chat");
 chatSend.current=ca[0];
 ca[1](function(msg:any){setChats(function(p:any){return [...p.slice(-30),msg];});});
@@ -70,13 +86,22 @@ let s=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
 streamRef.current=s;
 if(localRef.current)localRef.current.srcObject=s;
 setIsLive(true);
+setDebug("Going LIVE, announcing...");
+setTimeout(function(){
+if(lobbyRef.current){
+let a=lobbyRef.current.makeAction("live");
+let send=a[0];
+send({id:myId,name:user.name,avatar:user.avatar,room:room,isLive:true,time:Date.now()});
+}
+},500);
 let m=await import("trystero");
-let hr=m.joinRoom({appId:"jhumm-v26-unlimited-2026"},"host-"+myId);
+let hr=m.joinRoom({appId:"jhummkatok-prod-v1-stable"},"host-"+myId);
 hostRef.current=hr;
 hr.addStream(s);
 hr.onPeerJoin(function(pid:any){
-console.log("New viewer joined:",pid," total unlimited");
+console.log("Viewer joined you! Unlimited:",pid);
 hr.addStream(streamRef.current);
+setDebug("Viewer joined: "+pid);
 });
 }
 
@@ -84,21 +109,24 @@ async function joinP(h:any){
 if(h.id===myId)return;
 if(viewRef.current){try{viewRef.current.leave();}catch(e){}}
 setWatch(h);
+setDebug("Joining "+h.name+"...");
 let m=await import("trystero");
-let vr=m.joinRoom({appId:"jhumm-v26-unlimited-2026"},"host-"+h.id);
+let vr=m.joinRoom({appId:"jhummkatok-prod-v1-stable"},"host-"+h.id);
 viewRef.current=vr;
 vr.onPeerStream(function(st:any){
 if(remoteRef.current){
 remoteRef.current.srcObject=st;
 remoteRef.current.play().catch(()=>{});
+setDebug("Connected to "+h.name);
 }
 });
+setTimeout(function(){if(!remoteRef.current||!remoteRef.current.srcObject){setDebug("Retrying connection...");}},3000);
 }
 
 function sendChat(){if(!chatIn.trim())return;if(chatSend.current)chatSend.current({id:Date.now(),name:user.name,text:chatIn});setChatIn("");}
 function sendGift(e:any){
 if(giftSend.current)giftSend.current({emoji:e});
-if(chatSend.current)chatSend.current({id:Date.now(),name:"GIFT",text:user.name+" sent "+e+" to "+(watch?watch.name:"everyone")});
+if(chatSend.current)chatSend.current({id:Date.now(),name:"GIFT",text:user.name+" sent "+e});
 let id=Date.now()+Math.random();
 setGifts(function(p:any){return [...p,{id:id,emoji:e}];});
 setTimeout(function(){setGifts(function(p:any){return p.filter(function(x:any){return x.id!==id;});});},3500);
@@ -113,7 +141,7 @@ return(
 {!user && (
 <div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-zinc-900 via-black to-pink-950">
 <div className="bg-zinc-900 p-6 rounded-[28px] w-full max-w-sm border border-zinc-800">
-<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V26 UNLIMITED</p><p className="text-xs text-zinc-500 mt-1">Bigo Style • 1 Host → 100 Viewers</p></div>
+<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V27 FIXED</p><p className="text-xs text-zinc-500 mt-1">Fixed Discovery • Unlimited</p></div>
 {step===0 ? (
 <div>
 <div className="flex justify-center mt-5"><label className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-[3px] border-pink-600 cursor-pointer">{avatar ? <img src={avatar} className="w-full h-full object-cover" alt="av"/> : <span className="text-sm text-zinc-500">+ PHOTO</span>}<input type="file" accept="image/*" onChange={upAvatar} className="hidden"/></label></div>
@@ -141,36 +169,38 @@ return(
 
 <div className="p-2 flex gap-2 items-center">
 {!isLive ? <button onClick={goLive} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 py-2.5 rounded-full text-sm font-bold">🔴 GO LIVE</button> : <button onClick={function(){if(streamRef.current)streamRef.current.getTracks().forEach(function(t:any){t.stop();});if(hostRef.current)hostRef.current.leave();setIsLive(false);}} className="bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-full text-sm">⬛ STOP</button>}
-<div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{otherHosts.length} LIVE NOW</span></div>
+<div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{otherHosts.length} LIVE</span></div>
+<button onClick={function(){if(lobbyRef.current){let a=lobbyRef.current.makeAction("live");a[0]({id:myId,name:user.name,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()});setDebug("Force announced!");}}} className="bg-zinc-800 px-2 py-1 rounded-full text-[10px]">↻ Refresh</button>
 <div className="ml-auto flex items-center gap-2"><img src={user.avatar} className="w-7 h-7 rounded-full border border-pink-600" alt="me"/><button onClick={function(){localStorage.clear();location.reload();}} className="bg-zinc-900 px-3 py-1.5 rounded-full text-xs border border-zinc-800">{user.name}</button></div>
 </div>
+
+<div className="px-2 py-1"><p className="text-[10px] text-zinc-500 font-mono">{debug}</p></div>
 
 <div className="p-2 space-y-2">
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800">
 <video ref={localRef} autoPlay muted playsInline className="w-full h-48 object-cover"></video>
-{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - UNLIMITED VIEWERS</div>}
-{!isLive && <div className="absolute inset-0 flex items-center justify-center bg-black/60"><p className="text-zinc-500 text-sm">Tap GO LIVE - Everyone can join you!</p></div>}
+{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - {otherHosts.length} viewers can join</div>}
 </div>
 
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[320px]">
 <video ref={remoteRef} autoPlay playsInline className="w-full h-[340px] object-cover bg-black"></video>
-{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">📺</p><p className="text-white font-bold">{otherHosts.length} PEOPLE LIVE NOW</p><p className="text-zinc-500 text-sm text-center mt-1">Tap any avatar below to join instantly - Like Bigo!</p>{otherHosts.length>0 && <button onClick={function(){joinP(otherHosts[0]);}} className="mt-5 bg-gradient-to-r from-pink-600 to-purple-600 px-8 py-3 rounded-full font-bold">JOIN {otherHosts[0].name} 💖</button>}</div>}
-{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span><span className="text-xs bg-red-600 px-2 py-0.5 rounded-full">LIVE</span></div><button onClick={function(){if(viewRef.current)viewRef.current.leave();setWatch(null);}} className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}
+{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">{otherHosts.length>0 ? "🔥" : "👋"}</p><p className="text-white font-bold">{otherHosts.length>0 ? otherHosts.length+" PEOPLE LIVE - TAP BELOW!" : "No one live yet"}</p><p className="text-zinc-500 text-xs text-center mt-1">{otherHosts.length>0 ? "Everyone live appears below - Tap any to join like Bigo" : "Be first to go LIVE!"}</p></div>}
+{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span><span className="text-xs bg-red-600 px-2 py-0.5 rounded-full">LIVE</span></div><button onClick={function(){if(viewRef.current)viewRef.current.leave();setWatch(null);setDebug("Left "+watch.name);}} className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}
 </div>
 </div>
 
 <div className="px-2 mt-4">
-<p className="text-xs text-zinc-400 mb-2 font-black tracking-wider">🔥 LIVE NOW - TAP TO JOIN ANYONE ({otherHosts.length})</p>
-{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-500 text-sm">No one live right now</p><p className="text-zinc-600 text-xs mt-1">Be first! Tap GO LIVE</p></div> : (
+<p className="text-xs text-zinc-400 mb-2 font-black">🔥 ALL LIVE NOW - TAP ANY TO JOIN ({otherHosts.length}) - BIGO STYLE</p>
+{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">No one live yet</p><p className="text-zinc-600 text-xs mt-1">Open on 2 phones with different names, both tap GO LIVE - You will see each other here!</p><button onClick={function(){window.location.reload();}} className="mt-3 bg-zinc-800 px-4 py-2 rounded-full text-xs">↻ Hard Refresh</button></div> : (
 <div className="grid grid-cols-3 gap-2">
-{otherHosts.map(function(h:any){return(<div key={h.id} onClick={function(){joinP(h);}} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3 text-center cursor-pointer hover:border-pink-600 transition active:scale-95"><div className="relative"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-zinc-900 animate-pulse"></div></div><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[10px] text-zinc-500 truncate">{h.room}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1 font-bold">JOIN NOW</div></div>);})}
+{otherHosts.map(function(h:any){return(<div key={h.id} onClick={function(){joinP(h);}} className="bg-zinc-900 border-2 border-pink-600/30 rounded-2xl p-3 text-center cursor-pointer hover:border-pink-600 active:scale-95 shadow-lg"><div className="relative"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-zinc-900 animate-pulse"></div></div><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[10px] text-zinc-500">{h.room}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">JOIN NOW 🔥</div></div>);})}
 </div>
 )}
 </div>
 
 <div className="px-2 mt-4">
 <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl h-28 overflow-y-auto p-3 space-y-1">
-{chats.length===0 && <p className="text-zinc-600 text-xs text-center mt-8">💬 Chat with live people</p>}
+{chats.length===0 && <p className="text-zinc-600 text-xs text-center mt-8">💬 Chat</p>}
 {chats.map(function(c:any){return(<div key={c.id} className="text-xs"><b className={c.name==="GIFT" ? "text-yellow-400" : "text-pink-400"}>{c.name}: </b><span className="text-zinc-200">{c.text}</span></div>);})}
 </div>
 <div className="flex gap-2 mt-2"><input value={chatIn} onChange={function(e:any){setChatIn(e.target.value);}} onKeyDown={function(e:any){if(e.key==="Enter")sendChat();}} placeholder="Chat..." className="flex-1 p-3.5 bg-zinc-900 border border-zinc-800 rounded-full text-sm outline-none focus:border-pink-600"/><button onClick={sendChat} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 rounded-full text-sm font-bold">Send</button></div>
@@ -182,12 +212,6 @@ return(
 <div className="fixed bottom-24 left-0 right-0 pointer-events-none h-[50vh] overflow-hidden flex justify-center gap-3">
 {gifts.map(function(g:any){let left=Math.random()*60+20;return(<div key={g.id} className="gift-fly absolute text-4xl" style={{left:left+"%", bottom:"0"}}>{g.emoji}</div>);})}
 </div>
-
-{otherHosts.length>0 && !watch && (
-<button onClick={function(){joinP(otherHosts[0]);}} className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gradient-to-r from-pink-600 to-purple-600 px-8 py-4 rounded-full font-black shadow-2xl z-20 flex items-center gap-2">
-<span>JOIN {otherHosts[0].name}</span><span className="bg-white text-pink-600 px-2 py-0.5 rounded-full text-xs">{otherHosts.length} LIVE</span>
-</button>
-)}
 
 </div>
 )}
