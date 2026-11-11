@@ -59,7 +59,7 @@ streamRef.current=s;
 if(localRef.current)localRef.current.srcObject=s;
 setIsLive(true);
 let m=await import("trystero");
-let hr=m.joinRoom({appId:"jhumm-v32-own-server-final"},"host-"+myId);
+let hr=m.joinRoom({appId:"jhumm-v33-video-fixed",rtcConfig:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun.relay.metered.ca:80"},{urls:"turn:a.relay.metered.ca:80",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:80?transport=tcp",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:443",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"}]}},"host-"+myId); 
 hostRef.current=hr;
 hr.addStream(s);
 hr.onPeerJoin(function(){hr.addStream(streamRef.current);});
@@ -69,10 +69,10 @@ if(h.id===myId)return;
 if(viewRef.current){try{viewRef.current.leave();}catch(e){}}
 setWatch(h);
 let m=await import("trystero");
-let vr=m.joinRoom({appId:"jhumm-v32-own-server-final"},"host-"+h.id);
+let vr=m.joinRoom({appId:"jhumm-v33-video-fixed",rtcConfig:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun.relay.metered.ca:80"},{urls:"turn:a.relay.metered.ca:80",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:80?transport=tcp",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"},{urls:"turn:a.relay.metered.ca:443",username:"e8b5b2b5c1d3e7f9c1a2b3c4",credential:"d1e2f3a4b5c6d7e8f9a0b1c2"}]}},"host-"+h.id); 
 viewRef.current=vr;
 vr.onPeerStream(function(st:any){
-if(remoteRef.current){remoteRef.current.srcObject=st;remoteRef.current.play().catch(()=>{});}
+if(remoteRef.current){remoteRef.current.srcObject=st;setTimeout(()=>{if(remoteRef.current) remoteRef.current.play().catch(()=>{});},500); remoteRef.current.play().catch(()=>{});}
 });
 }
 function sendChat(){if(!chatIn.trim())return;let data={id:Date.now(),name:user.name,text:chatIn};setChats(function(p:any){return [...p.slice(-30),data];});setChatIn("");}
