@@ -1,138 +1,224 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { initializeApp, getApps } from "firebase/app";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { getFirestore, collection, addDoc, doc, deleteDoc, query, orderBy, onSnapshot, setDoc } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB66YshhdHYNlC7zzRRUqw6qz0_Y-Q1VAQ",
+  authDomain: "jhummka-c2bbe.firebaseapp.com",
+  databaseURL: "https://jhummka-c2bbe-default-rtdb.firebaseio.com",
+  projectId: "jhummka-c2bbe",
+  storageBucket: "jhummka-c2bbe.firebasestorage.app",
+  messagingSenderId: "337271453923",
+  appId: "1:337271453923:web:2b4be740a21cee7b98add6",
+  measurementId: "G-29JQLMP02D"
+};
+
+let app:any; let auth:any; let db:any; let storage:any;
+if(!getApps().length){ app=initializeApp(firebaseConfig); auth=getAuth(app); db=getFirestore(app); storage=getStorage(app); }
+else { app=getApps()[0]; auth=getAuth(app); db=getFirestore(app); storage=getStorage(app); }
+
+const ROOMS = Array.from({length:15},(_,i)=>`Room ${i+1}`);
+
 export default function Page(){
 const [user,setUser]=useState(null as any);
-const [name,setName]=useState("");
-const [email,setEmail]=useState("");
-const [country,setCountry]=useState("Bangladesh");
-const [phone,setPhone]=useState("");
-const [avatar,setAvatar]=useState("");
-const [otp,setOtp]=useState("");
-const [genOtp,setGenOtp]=useState("");
-const [step,setStep]=useState(0);
 const [myId,setMyId]=useState("");
-const [room,setRoom]=useState("jhumm-room-1");
+const [room,setRoom]=useState("Room 1");
 const [isLive,setIsLive]=useState(false);
-const [hosts,setHosts]=useState([] as any);
+const [liveMap,setLiveMap]=useState({} as any);
+const [videos,setVideos]=useState([] as any);
 const [watch,setWatch]=useState(null as any);
-const [chats,setChats]=useState([] as any);
-const [chatIn,setChatIn]=useState("");
-const [gifts,setGifts]=useState([] as any);
-const [status,setStatus]=useState("Connecting...");
+const [uploadFile,setUploadFile]=useState(null as any);
+const [status,setStatus]=useState("Loading...");
 const localRef=useRef(null as any);
 const remoteRef=useRef(null as any);
 const streamRef=useRef(null as any);
 const peerRef=useRef(null as any);
-const callRef=useRef(null as any);
+const recorderRef=useRef(null as any);
+const chunksRef=useRef([] as any);
+
 useEffect(()=>{
-let s=localStorage.getItem("jhumm_v32");
-if(s){let u=JSON.parse(s);setUser(u);setMyId(u.id);setAvatar(u.avatar);}
+const unsub=onAuthStateChanged(auth, async (u:any)=>{
+if(u){
+let userData={id:u.uid,name:u.displayName,email:u.email,avatar:u.photoURL};
+setUser(userData); setMyId(u.uid); setStatus("✅ "+u.displayName);
+await setDoc(doc(db,"users",u.uid),userData,{merge:true});
+}else{ setUser(null); }
+});
+return ()=>unsub();
 },[]);
+
+useEffect(()=>{
+if(!db)return;
+// Listen to 15 rooms live
+let unsubs:any=[];
+ROOMS.forEach((r:any)=>{
+let unsub=onSnapshot(doc(db,"live",r),(snap:any)=>{
+if(snap.exists()){ let data=snap.data(); if(Date.now()-data.time<30000) setLiveMap((prev:any)=>({...prev,[r]:data})); else setLiveMap((prev:any)=>{let n={...prev}; delete n[r]; return n;}); }
+else{ setLiveMap((prev:any)=>{let n={...prev}; delete n[r]; return n;}); }
+});
+unsubs.push(unsub);
+});
+let unsubVideos=onSnapshot(query(collection(db,"videos"),orderBy("time","desc")),(snap:any)=>{
+let list:any=[]; snap.forEach((d:any)=>list.push({fid:d.id,...d.data()})); setVideos(list.filter((v:any)=>v.room===room || !v.room));
+});
+return ()=>{unsubs.forEach((u:any)=>u()); unsubVideos();};
+},[room]);
+
 useEffect(()=>{
 if(!user||!myId)return;
-import("peerjs").then(function(m){
-let Peer=(m as any).default || (m as any).Peer || m;
-let peer=new Peer(myId,{config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:global.stun.twilio.com:3478"},{urls:"turn:openrelay.metered.ca:80",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"},{urls:"turn:openrelay.metered.ca:443",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"}]}});
+import("peerjs").then((m:any)=>{
+let Peer=m.default||m.Peer||m;
+let peer=new Peer(myId,{config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"turn:openrelay.metered.ca:80",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"}]}});
 peerRef.current=peer;
-peer.on("open",()=>setStatus("✅ Video Ready"));
-peer.on("call",(call:any)=>{call.answer(streamRef.current); call.on("stream",(rs:any)=>{if(remoteRef.current){remoteRef.current.srcObject=rs; remoteRef.current.play().catch(()=>{});}});});
+peer.on("call",(call:any)=>{call.answer(streamRef.current); call.on("stream",(rs:any)=>{ if(remoteRef.current){ remoteRef.current.srcObject=rs; remoteRef.current.play().catch(()=>{}); }});});
 });
-// KEYVALUE.XYZ - 100% USA+BD works, no block!
-let iv=setInterval(async function(){
-try{
-let payload={id:myId,name:user.name,email:user.email,country:user.country,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()};
-await fetch("https://api.keyvalue.xyz/jhummkatok-v38-usa-bd-2026/"+myId,{method:"PUT",body:JSON.stringify(payload)}).catch(()=>{});
-let res=await fetch("https://api.keyvalue.xyz/jhummkatok-v38-usa-bd-2026/");
-let keys=await res.json().catch(()=>[]);
-if(!Array.isArray(keys)) keys=[];
-let all=[];
-for(let k of keys.slice(0,20)){
-try{
-let r=await fetch("https://api.keyvalue.xyz/jhummkatok-v38-usa-bd-2026/"+k);
-let txt=await r.text();
-let obj=JSON.parse(txt);
-if(obj && Date.now()-obj.time<20000 && obj.id!==myId && obj.isLive) all.push(obj);
-}catch(e){}
+},[user,myId]);
+
+async function loginGoogle(){ await signInWithPopup(auth,new GoogleAuthProvider()); }
+async function logout(){ await signOut(auth); }
+
+async function goLive(){
+let currentLive=liveMap[room];
+if(currentLive && currentLive.id!==myId){ alert(`Room ${room} - Single Live Only! ${currentLive.name} is LIVE! Choose other room from 15 rooms!`); return; }
+let s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:true});
+streamRef.current=s; if(localRef.current){ localRef.current.srcObject=s; localRef.current.play().catch(()=>{}); }
+chunksRef.current=[];
+let recorder=new MediaRecorder(s,{mimeType:"video/webm"});
+recorderRef.current=recorder;
+recorder.ondataavailable=(e:any)=>{ if(e.data.size>0) chunksRef.current.push(e.data); };
+recorder.onstop=async ()=>{
+let blob=new Blob(chunksRef.current,{type:"video/webm"});
+let fName=`live-records/${room}_${myId}_${Date.now()}.webm`;
+let sRef=ref(storage,fName);
+await uploadBytes(sRef,blob);
+let url=await getDownloadURL(sRef);
+await addDoc(collection(db,"videos"),{type:"live_record",room:room,url:url,name:user.name,avatar:user.avatar,uid:myId,time:Date.now(),likes:0});
+setStatus("✅ Recording Saved to "+room);
+};
+recorder.start();
+setIsLive(true);
+let payload={id:myId,name:user.name,avatar:user.avatar,room:room,time:Date.now(),isLive:true};
+await setDoc(doc(db,"live",room),payload);
+try{ await fetch("/api/presence",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}); }catch(e){}
+setStatus(`🔴 LIVE in ${room} + Recording...`);
 }
-setHosts(all);
-setStatus("✅ LIVE: "+all.length+" | USA-BD Shared DB | "+user.country);
-}catch(e){setStatus("Connecting...");}
-},3000);
-return function(){clearInterval(iv); if(peerRef.current) peerRef.current.destroy();};
-},[user,myId,isLive,room]);
-function upAvatar(e:any){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=function(){setAvatar(r.result as string);};r.readAsDataURL(f);}
-function startOtp(){if(!name||!email||!phone||!avatar){alert("Need all");return;}let o=Math.floor(100000+Math.random()*900000).toString();setGenOtp(o);setStep(1);}
-function doVerify(){let a=otp.toString().trim().replace(/\s/g,""); let b=genOtp.toString().trim(); if(a!==b){alert("OTP is "+b);return;} let id=name.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,6)+Math.random().toString(36).slice(2,5); let u={id:id,name:name,email:email,country:country,phone:phone,avatar:avatar}; localStorage.setItem("jhumm_v32",JSON.stringify(u)); setUser(u); setMyId(id);}
-async function goLive(){let s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:true}); streamRef.current=s; if(localRef.current){localRef.current.srcObject=s; localRef.current.play().catch(()=>{});} setIsLive(true);}
+
+async function stopLive(){
+if(streamRef.current) streamRef.current.getTracks().forEach((t:any)=>t.stop());
+if(recorderRef.current) recorderRef.current.stop();
+setIsLive(false);
+await deleteDoc(doc(db,"live",room));
+try{ await fetch("/api/presence",{method:"POST",body:JSON.stringify({id:myId,room:room,isLive:false,time:Date.now()})}); }catch(e){}
+setStatus("Stopped");
+}
+
 async function joinP(h:any){
-if(h.id===myId)return;
 setWatch(h);
-try{
-if(!peerRef.current){alert("Wait 3 sec");return;}
 let streamToSend=streamRef.current;
-if(!streamToSend){try{streamToSend=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); streamRef.current=streamToSend; if(localRef.current) localRef.current.srcObject=streamToSend;}catch(e){streamToSend=new MediaStream();}}
-let call=peerRef.current.call(h.id, streamToSend);
-if(!call){alert("Host offline");return;}
-callRef.current=call;
-call.on("stream",(rs:any)=>{if(remoteRef.current){remoteRef.current.srcObject=rs; setTimeout(()=>remoteRef.current.play().catch(()=>{}),300);}});
-}catch(e:any){alert("Join: "+e.message); setWatch(null);}
+if(!streamToSend){ streamToSend=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); streamRef.current=streamToSend; }
+let call=peerRef.current.call(h.id,streamToSend);
+call.on("stream",(rs:any)=>{ if(remoteRef.current){ remoteRef.current.srcObject=rs; remoteRef.current.play().catch(()=>{}); }});
 }
-function leaveWatch(){if(callRef.current)callRef.current.close(); if(remoteRef.current)remoteRef.current.srcObject=null; setWatch(null);}
-function sendChat(){if(!chatIn.trim())return; setChats((p:any)=>[...p.slice(-30),{id:Date.now(),name:user.name,text:chatIn}]); setChatIn("");}
-function sendGift(e:any){let id=Date.now()+Math.random(); setGifts((p:any)=>[...p,{id:id,emoji:e}]); setTimeout(()=>setGifts((p:any)=>p.filter((x:any)=>x.id!==id)),3500);}
+
+async function doUpload(){
+if(!uploadFile||!user){ alert("Select video"); return; }
+setStatus("Uploading to "+room+"...");
+let fName=`uploads/${room}_${myId}_${Date.now()}_${uploadFile.name}`;
+let sRef=ref(storage,fName);
+await uploadBytes(sRef,uploadFile);
+let url=await getDownloadURL(sRef);
+await addDoc(collection(db,"videos"),{type:"upload",room:room,url:url,name:user.name,avatar:user.avatar,uid:myId,time:Date.now(),likes:0});
+setStatus("✅ Uploaded to "+room); setUploadFile(null);
+}
+
+let currentLive=liveMap[room];
+let allLives=Object.values(liveMap) as any[];
+
 return(
 <div className="bg-black text-white min-h-screen pb-24">
-<style>{`@keyframes fly{0%{transform:translateY(100vh) scale(0.5);opacity:1}100%{transform:translateY(-20vh) scale(1.8);opacity:0}} .gift-fly{animation:fly 3.5s ease-out forwards;}`}</style>
 {!user && (
-<div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-zinc-900 via-black to-pink-950">
-<div className="bg-zinc-900 p-6 rounded-[28px] w-full max-w-sm border border-zinc-800">
-<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V38 USA FIX</p></div>
-{step===0 ? (
-<div>
-<div className="flex justify-center mt-5"><label className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-[3px] border-pink-600 cursor-pointer">{avatar ? <img src={avatar} className="w-full h-full object-cover" alt="av"/> : <span className="text-sm text-zinc-500">+ PHOTO</span>}<input type="file" accept="image/*" onChange={upAvatar} className="hidden"/></label></div>
-<input value={name} onChange={(e:any)=>setName(e.target.value)} placeholder="Full Name" className="w-full p-4 mt-5 bg-zinc-800 rounded-2xl outline-none border border-zinc-700"/>
-<input value={email} onChange={(e:any)=>setEmail(e.target.value)} placeholder="Email" className="w-full p-4 mt-3 bg-zinc-800 rounded-2xl outline-none border border-zinc-700"/>
-<select value={country} onChange={(e:any)=>setCountry(e.target.value)} className="w-full p-4 mt-3 bg-zinc-800 rounded-2xl outline-none border border-zinc-700"><option>Bangladesh</option><option>USA</option><option>UK</option><option>India</option><option>Canada</option><option>Saudi Arabia</option><option>UAE</option><option>Malaysia</option><option>Other</option></select>
-<input value={phone} onChange={(e:any)=>setPhone(e.target.value)} placeholder="Phone" className="w-full p-4 mt-3 bg-zinc-800 rounded-2xl outline-none border border-zinc-700"/>
-<button onClick={startOtp} className="w-full bg-gradient-to-r from-pink-600 to-purple-600 p-4 rounded-2xl mt-4 font-bold">SEND OTP →</button>
-</div>
-) : (
-<div>
-<div className="bg-green-500/20 border border-green-500/30 p-3 rounded-2xl mt-4 text-center"><p className="text-2xl font-mono font-bold">{genOtp}</p></div>
-<input value={otp} onChange={(e:any)=>setOtp(e.target.value)} placeholder="Enter OTP" className="w-full p-4 mt-4 bg-zinc-800 border-2 border-green-500 rounded-2xl text-center text-xl tracking-widest outline-none" inputMode="numeric"/>
-<button onClick={doVerify} className="w-full bg-green-500 text-black p-4 rounded-2xl mt-4 font-black">VERIFY 🚀</button>
-<button onClick={()=>setStep(0)} className="w-full text-zinc-500 mt-3 text-sm">← Back</button>
-</div>
-)}
+<div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-zinc-900 to-black">
+<div className="bg-zinc-900 p-8 rounded-[28px] border border-zinc-800 w-full max-w-sm text-center">
+<h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK V42</h2>
+<p className="text-xs text-zinc-400">15 Rooms • Single Live per Room</p>
+<button onClick={loginGoogle} className="w-full bg-white text-black p-4 rounded-full mt-6 font-bold">Continue with Google</button>
 </div>
 </div>
 )}
 {user && (
 <div className="max-w-md mx-auto">
-<div className="p-2 flex gap-2 items-center">
-{!isLive ? <button onClick={goLive} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 py-2.5 rounded-full text-sm font-bold">🔴 GO LIVE</button> : <button onClick={()=>{if(streamRef.current)streamRef.current.getTracks().forEach((t:any)=>t.stop()); setIsLive(false);}} className="bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-full text-sm">⬛ STOP</button>}
-<div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{hosts.length} LIVE</span></div>
-<div className="ml-auto flex items-center gap-2"><img src={user.avatar} className="w-7 h-7 rounded-full border border-pink-600" alt="me"/><button onClick={()=>{localStorage.clear();location.reload();}} className="bg-zinc-900 px-3 py-1.5 rounded-full text-xs border border-zinc-800">{user.name}</button></div>
+<div className="p-3 flex items-center gap-2 border-b border-zinc-900">
+<img src={user.avatar} className="w-8 h-8 rounded-full"/>
+<span className="text-xs font-bold truncate">{user.name}</span>
+<div className="ml-auto flex gap-2">
+{!isLive ? <button onClick={goLive} className="bg-pink-600 px-3 py-2 rounded-full text-[11px] font-bold">🔴 GO LIVE in {room}</button> : <button onClick={stopLive} className="bg-zinc-800 px-3 py-2 rounded-full text-[11px]">⬛ STOP & SAVE</button>}
+<button onClick={logout} className="bg-zinc-900 px-2 py-2 rounded-full text-[10px]">Logout</button>
 </div>
-<div className="px-2 py-1"><p className="text-[11px] text-green-400 font-mono bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800 inline-block">{status}</p></div>
-<div className="p-2 space-y-2">
-<div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800"><video ref={localRef} autoPlay muted playsInline className="w-full h-48 object-cover bg-zinc-900"></video>{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - {user.country}</div>}</div>
-<div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[340px]"><video ref={remoteRef} autoPlay playsInline className="w-full h-[340px] object-cover bg-black"></video>{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">👋</p><p className="text-white font-bold text-center">{hosts.length>0 ? hosts.length+" LIVE - TAP BELOW!" : "No one live"}</p></div>}{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span></div><button onClick={leaveWatch} className="bg-black/70 px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}</div>
 </div>
-<div className="px-2 mt-4">
-<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW ({hosts.length}) - TAP TO SEE</p>
-{hosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting... Ask friends to GO LIVE same time!</p></div> : (
-<div className="grid grid-cols-3 gap-2">
-{hosts.map((h:any)=>(<div key={h.id} onClick={()=>joinP(h)} className="bg-zinc-900 border-2 border-pink-600 rounded-2xl p-3 text-center cursor-pointer"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[9px] text-zinc-400 truncate">{h.country}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">SEE VIDEO 🔥</div></div>))}
+
+<div className="p-2">
+<p className="text-[11px] text-zinc-400 mb-1 font-bold">📍 CHOOSE ROOM (15 Rooms) - Single Live per Room:</p>
+<div className="grid grid-cols-5 gap-1.5">
+{ROOMS.map((r:any)=>{
+let isCurrent=r===room;
+let hasLive=liveMap[r];
+return(
+<button key={r} onClick={()=>setRoom(r)} className={`p-2 rounded-xl text-[10px] font-bold border ${isCurrent?'bg-pink-600 border-pink-500 text-white':'bg-zinc-900 border-zinc-800 text-zinc-300'} ${hasLive?'!border-green-500 !bg-green-900/30':''}`}>
+<div>{r}</div>
+{hasLive && <div className="text-[8px] text-green-400 mt-0.5">● LIVE</div>}
+{!hasLive && <div className="text-[8px] text-zinc-500">Empty</div>}
+</button>
+);
+})}
 </div>
+<p className="text-[10px] text-green-400 mt-2 font-mono">{status} | {allLives.length} LIVE in 15 rooms</p>
+</div>
+
+<div className="p-2 grid grid-cols-2 gap-2">
+<div className="rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800"><video ref={localRef} autoPlay muted playsInline className="w-full h-36 object-cover"/><p className="text-[9px] text-center p-1">{isLive?`🔴 ${room} REC`:room}</p></div>
+<div className="rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800"><video ref={remoteRef} autoPlay playsInline className="w-full h-36 object-cover bg-black"/><p className="text-[9px] text-center p-1">{watch?watch.name:room}</p></div>
+</div>
+
+{currentLive && currentLive.id!==myId && (
+<div className="p-2"><div onClick={()=>joinP(currentLive)} className="bg-pink-900/40 border-2 border-pink-600 rounded-2xl p-3 flex gap-3 cursor-pointer"><img src={currentLive.avatar} className="w-10 h-10 rounded-full"/><div><div className="text-sm font-bold">{currentLive.name} LIVE in {room}</div><div className="text-xs text-pink-400">Single Live - TAP TO SEE 🔥</div></div></div></div>
 )}
+
+{!currentLive && <div className="mx-2 bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-center"><p className="text-xs text-zinc-400">No one LIVE in {room} - You can GO LIVE! (Single Live per Room)</p></div>}
+
+<div className="p-2 mt-2">
+<p className="text-[11px] text-zinc-400 mb-2 font-bold">🔥 All 15 Rooms LIVE ({allLives.length}):</p>
+<div className="grid grid-cols-3 gap-2">
+{allLives.map((h:any)=>(
+<div key={h.id+h.room} onClick={()=>{setRoom(h.room); joinP(h);}} className="bg-zinc-900 border border-zinc-800 rounded-xl p-2 text-center cursor-pointer">
+<img src={h.avatar} className="w-10 h-10 rounded-full mx-auto"/>
+<div className="text-[10px] font-bold mt-1 truncate">{h.name}</div>
+<div className="text-[8px] text-green-400">{h.room} ● LIVE</div>
 </div>
-<div className="px-2 mt-4">
-<div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl h-28 overflow-y-auto p-3 space-y-1">{chats.map((c:any)=>(<div key={c.id} className="text-xs"><b className="text-pink-400">{c.name}: </b><span className="text-zinc-200">{c.text}</span></div>))}</div>
-<div className="flex gap-2 mt-2"><input value={chatIn} onChange={(e:any)=>setChatIn(e.target.value)} onKeyDown={(e:any)=>{if(e.key==="Enter")sendChat();}} placeholder="Chat..." className="flex-1 p-3.5 bg-zinc-900 border border-zinc-800 rounded-full text-sm outline-none focus:border-pink-600"/><button onClick={sendChat} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 rounded-full text-sm font-bold">Send</button></div>
-<div className="mt-3 bg-zinc-900 border border-zinc-800 p-2.5 rounded-2xl flex gap-2 overflow-x-auto">{["❤️","🌹","💎","🔥","🎉","👑","💋","🚀"].map((em:any)=>(<button key={em} onClick={()=>sendGift(em)} className="bg-zinc-800 px-4 py-2.5 rounded-full text-lg border border-zinc-700">{em}</button>))}</div>
+))}
 </div>
-<div className="fixed bottom-24 left-0 right-0 pointer-events-none h-[50vh] overflow-hidden flex justify-center gap-3">{gifts.map((g:any)=>{let left=Math.random()*60+20; return(<div key={g.id} className="gift-fly absolute text-4xl" style={{left:left+"%", bottom:"0"}}>{g.emoji}</div>);})}</div>
+</div>
+
+<div className="p-3 bg-zinc-900 rounded-2xl m-2 border border-zinc-800">
+<p className="text-xs font-bold mb-2">📤 Upload to {room}</p>
+<input type="file" accept="video/*" onChange={(e:any)=>setUploadFile(e.target.files[0])} className="w-full text-[10px] mb-2"/>
+<button onClick={doUpload} className="w-full bg-pink-600 p-2.5 rounded-full text-xs font-bold">Upload Video to {room}</button>
+</div>
+
+<div className="p-2">
+<p className="text-xs font-bold mb-2">🎥 Videos in {room} ({videos.length})</p>
+<div className="space-y-2">
+{videos.map((v:any)=>(
+<div key={v.fid} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+<video src={v.url} controls className="w-full h-40 bg-black"/>
+<div className="p-2 flex justify-between"><span className="text-[10px]">{v.name} • {v.room}</span><span className="text-[9px] text-zinc-500">{new Date(v.time).toLocaleString()}</span></div>
+</div>
+))}
+</div>
+</div>
+
 </div>
 )}
 </div>

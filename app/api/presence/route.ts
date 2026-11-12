@@ -1,25 +1,21 @@
-export const dynamic = 'force-dynamic';
-const FB="https://trystero-101-default-rtdb.firebaseio.com/jhumm-v36-presence";
-export async function GET(){
-try{
-let r=await fetch(FB+".json");
-let d=await r.json()||{};
-let now=Date.now();
-let all=Object.values(d as any).filter((x:any)=>now-x.time<20000);
-return new Response(JSON.stringify(all),{headers:{"Access-Control-Allow-Origin":"*","Content-Type":"application/json"}});
-}catch(e){return new Response("[]",{headers:{"Access-Control-Allow-Origin":"*"}});}
+import { kv } from '@vercel/kv';
+export const dynamic='force-dynamic';
+export async function GET(req:Request){
+let url=new URL(req.url);
+let room=url.searchParams.get('room')||'Room 1';
+let key=`live:v42:${room}`;
+let all=await kv.hgetall(key) as any||{};
+let list=Object.values(all).filter((u:any)=>Date.now()-u.time<30000 && u.isLive);
+return new Response(JSON.stringify(list.slice(0,1)),{headers:{"Access-Control-Allow-Origin":"*"}});
 }
 export async function POST(req:Request){
-try{
 let b=await req.json();
-await fetch(FB+"/"+b.id+".json",{method:"PUT",body:JSON.stringify(b)});
-let r=await fetch(FB+".json");
-let d=await r.json()||{};
-let now=Date.now();
-let all=Object.values(d as any).filter((x:any)=>now-x.time<25000);
-return new Response(JSON.stringify(all),{headers:{"Access-Control-Allow-Origin":"*","Content-Type":"application/json"}});
-}catch(e){return new Response("[]",{headers:{"Access-Control-Allow-Origin":"*"}});}
-}
-export async function OPTIONS(){
-return new Response("",{headers:{"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,POST,OPTIONS","Access-Control-Allow-Headers":"Content-Type"}});
+let room=b.room||'Room 1';
+let key=`live:v42:${room}`;
+if(!b.isLive){ await kv.hdel(key,b.id); return new Response("[]",{headers:{"Access-Control-Allow-Origin":"*"}}); }
+let all=await kv.hgetall(key) as any||{};
+let lives=Object.values(all).filter((u:any)=>Date.now()-u.time<30000 && u.isLive);
+if(lives.length>=1 && !all[b.id]) return new Response(JSON.stringify(lives.slice(0,1)),{headers:{"Access-Control-Allow-Origin":"*"}});
+await kv.hset(key,{[b.id]:b});
+return new Response(JSON.stringify([...lives,b].slice(0,1)),{headers:{"Access-Control-Allow-Origin":"*"}});
 } 
