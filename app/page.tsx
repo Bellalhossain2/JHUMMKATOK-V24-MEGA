@@ -30,32 +30,34 @@ if(s){let u=JSON.parse(s);setUser(u);setMyId(u.id);setAvatar(u.avatar);}
 },[]);
 useEffect(()=>{
 if(!user||!myId)return;
-setStatus("✅ ntfy Shared DB Connecting...");
-// PeerJS setup
 import("peerjs").then(function(m){
 let Peer=(m as any).default || (m as any).Peer || m;
 let peer=new Peer(myId,{config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:global.stun.twilio.com:3478"},{urls:"turn:openrelay.metered.ca:80",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"},{urls:"turn:openrelay.metered.ca:443",username:"openrelay.metered.ca",credential:"openrelay.metered.ca"}]}});
 peerRef.current=peer;
-peer.on("open",()=>{setStatus("✅ Video Ready!");});
-peer.on("call",(call:any)=>{call.answer(streamRef.current); call.on("stream",(rStream:any)=>{if(remoteRef.current){remoteRef.current.srcObject=rStream; remoteRef.current.play().catch(()=>{});}}); callRef.current=call;});
+peer.on("open",()=>setStatus("✅ Video Ready"));
+peer.on("call",(call:any)=>{call.answer(streamRef.current); call.on("stream",(rs:any)=>{if(remoteRef.current){remoteRef.current.srcObject=rs; remoteRef.current.play().catch(()=>{});}});});
 });
-// ntfy shared presence - 100% works USA + BD
+// KEYVALUE.XYZ - 100% USA+BD works, no block!
 let iv=setInterval(async function(){
 try{
 let payload={id:myId,name:user.name,email:user.email,country:user.country,avatar:user.avatar,room:room,isLive:isLive,time:Date.now()};
-// publish my presence
-await fetch("https://ntfy.sh/jhummkatok-v37-live-2026",{method:"POST",body:JSON.stringify(payload)}).catch(()=>{});
-// get all recent presence (last 30 sec)
-let res=await fetch("https://ntfy.sh/jhummkatok-v37-live-2026/json?since=30s");
-let txt=await res.text();
-let lines=txt.trim().split("\n");
-let map=new Map();
-lines.forEach((line:any)=>{try{let j=JSON.parse(line); let inner=JSON.parse(j.message); if(Date.now()-inner.time<20000) map.set(inner.id,inner);}catch(e){}});
-let all=Array.from(map.values()).filter((h:any)=>h.id!==myId && h.isLive);
+await fetch("https://api.keyvalue.xyz/jhummkatok-v38-usa-bd-2026/"+myId,{method:"PUT",body:JSON.stringify(payload)}).catch(()=>{});
+let res=await fetch("https://api.keyvalue.xyz/jhummkatok-v38-usa-bd-2026/");
+let keys=await res.json().catch(()=>[]);
+if(!Array.isArray(keys)) keys=[];
+let all=[];
+for(let k of keys.slice(0,20)){
+try{
+let r=await fetch("https://api.keyvalue.xyz/jhummkatok-v38-usa-bd-2026/"+k);
+let txt=await r.text();
+let obj=JSON.parse(txt);
+if(obj && Date.now()-obj.time<20000 && obj.id!==myId && obj.isLive) all.push(obj);
+}catch(e){}
+}
 setHosts(all);
-setStatus("✅ LIVE: "+all.length+" | ntfy Shared | "+user.country);
-}catch(e){setStatus("Connecting shared...");}
-},2500);
+setStatus("✅ LIVE: "+all.length+" | USA-BD Shared DB | "+user.country);
+}catch(e){setStatus("Connecting...");}
+},3000);
 return function(){clearInterval(iv); if(peerRef.current) peerRef.current.destroy();};
 },[user,myId,isLive,room]);
 function upAvatar(e:any){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=function(){setAvatar(r.result as string);};r.readAsDataURL(f);}
@@ -70,23 +72,21 @@ if(!peerRef.current){alert("Wait 3 sec");return;}
 let streamToSend=streamRef.current;
 if(!streamToSend){try{streamToSend=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); streamRef.current=streamToSend; if(localRef.current) localRef.current.srcObject=streamToSend;}catch(e){streamToSend=new MediaStream();}}
 let call=peerRef.current.call(h.id, streamToSend);
-if(!call){alert("Host offline, try again");return;}
+if(!call){alert("Host offline");return;}
 callRef.current=call;
-call.on("stream",(rStream:any)=>{if(remoteRef.current){remoteRef.current.srcObject=rStream; setTimeout(()=>remoteRef.current.play().catch(()=>{}),300);}});
-call.on("close",()=>setWatch(null));
+call.on("stream",(rs:any)=>{if(remoteRef.current){remoteRef.current.srcObject=rs; setTimeout(()=>remoteRef.current.play().catch(()=>{}),300);}});
 }catch(e:any){alert("Join: "+e.message); setWatch(null);}
 }
 function leaveWatch(){if(callRef.current)callRef.current.close(); if(remoteRef.current)remoteRef.current.srcObject=null; setWatch(null);}
-function sendChat(){if(!chatIn.trim())return; let d={id:Date.now(),name:user.name,text:chatIn}; setChats((p:any)=>[...p.slice(-30),d]); setChatIn("");}
+function sendChat(){if(!chatIn.trim())return; setChats((p:any)=>[...p.slice(-30),{id:Date.now(),name:user.name,text:chatIn}]); setChatIn("");}
 function sendGift(e:any){let id=Date.now()+Math.random(); setGifts((p:any)=>[...p,{id:id,emoji:e}]); setTimeout(()=>setGifts((p:any)=>p.filter((x:any)=>x.id!==id)),3500);}
-let otherHosts=hosts;
 return(
 <div className="bg-black text-white min-h-screen pb-24">
 <style>{`@keyframes fly{0%{transform:translateY(100vh) scale(0.5);opacity:1}100%{transform:translateY(-20vh) scale(1.8);opacity:0}} .gift-fly{animation:fly 3.5s ease-out forwards;}`}</style>
 {!user && (
 <div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-zinc-900 via-black to-pink-950">
 <div className="bg-zinc-900 p-6 rounded-[28px] w-full max-w-sm border border-zinc-800">
-<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V37 ntfy FIX</p></div>
+<div className="text-center"><h2 className="text-2xl font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">JHUMMKATOK</h2><p className="text-pink-500 font-bold">V38 USA FIX</p></div>
 {step===0 ? (
 <div>
 <div className="flex justify-center mt-5"><label className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-[3px] border-pink-600 cursor-pointer">{avatar ? <img src={avatar} className="w-full h-full object-cover" alt="av"/> : <span className="text-sm text-zinc-500">+ PHOTO</span>}<input type="file" accept="image/*" onChange={upAvatar} className="hidden"/></label></div>
@@ -109,24 +109,21 @@ return(
 )}
 {user && (
 <div className="max-w-md mx-auto">
-<div className="sticky top-0 z-10 bg-black/90 p-2 flex gap-1.5 overflow-x-auto border-b border-zinc-900">
-{Array.from({length:8},(_,i)=>{let r="jhumm-room-"+(i+1); let isA=room===r; return(<button key={r} onClick={()=>setRoom(r)} className={isA ? "bg-gradient-to-r from-pink-600 to-purple-600 px-4 py-1.5 rounded-full text-xs font-bold" : "bg-zinc-800 px-4 py-1.5 rounded-full text-xs text-zinc-400"}>{i+1}</button>);})}
-</div>
 <div className="p-2 flex gap-2 items-center">
 {!isLive ? <button onClick={goLive} className="bg-gradient-to-r from-pink-600 to-purple-600 px-6 py-2.5 rounded-full text-sm font-bold">🔴 GO LIVE</button> : <button onClick={()=>{if(streamRef.current)streamRef.current.getTracks().forEach((t:any)=>t.stop()); setIsLive(false);}} className="bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-full text-sm">⬛ STOP</button>}
-<div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{otherHosts.length} LIVE</span></div>
+<div className="flex items-center gap-1 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-400 font-bold">{hosts.length} LIVE</span></div>
 <div className="ml-auto flex items-center gap-2"><img src={user.avatar} className="w-7 h-7 rounded-full border border-pink-600" alt="me"/><button onClick={()=>{localStorage.clear();location.reload();}} className="bg-zinc-900 px-3 py-1.5 rounded-full text-xs border border-zinc-800">{user.name}</button></div>
 </div>
 <div className="px-2 py-1"><p className="text-[11px] text-green-400 font-mono bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800 inline-block">{status}</p></div>
 <div className="p-2 space-y-2">
 <div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800"><video ref={localRef} autoPlay muted playsInline className="w-full h-48 object-cover bg-zinc-900"></video>{isLive && <div className="absolute top-3 left-3 bg-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● LIVE - {user.country}</div>}</div>
-<div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[340px]"><video ref={remoteRef} autoPlay playsInline className="w-full h-[340px] object-cover bg-black"></video>{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">👋</p><p className="text-white font-bold text-center">{otherHosts.length>0 ? otherHosts.length+" LIVE - TAP BELOW!" : "No one live"}</p></div>}{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span></div><button onClick={leaveWatch} className="bg-black/70 px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}</div>
+<div className="relative rounded-[20px] overflow-hidden bg-zinc-900 border border-zinc-800 min-h-[340px]"><video ref={remoteRef} autoPlay playsInline className="w-full h-[340px] object-cover bg-black"></video>{!watch && <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-black p-4"><p className="text-4xl mb-3">👋</p><p className="text-white font-bold text-center">{hosts.length>0 ? hosts.length+" LIVE - TAP BELOW!" : "No one live"}</p></div>}{watch && <div className="absolute top-3 left-3 right-3 flex justify-between"><div className="bg-black/70 px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700"><img src={watch.avatar} className="w-6 h-6 rounded-full" alt="host"/><span className="text-xs font-bold">{watch.name}</span></div><button onClick={leaveWatch} className="bg-black/70 px-3 py-1.5 rounded-full text-xs border border-zinc-700">✕ Leave</button></div>}</div>
 </div>
 <div className="px-2 mt-4">
-<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW ({otherHosts.length})</p>
-{otherHosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting...</p></div> : (
+<p className="text-xs text-zinc-400 mb-2 font-black">🔥 LIVE NOW ({hosts.length}) - TAP TO SEE</p>
+{hosts.length===0 ? <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center"><p className="text-zinc-400 text-sm">Waiting... Ask friends to GO LIVE same time!</p></div> : (
 <div className="grid grid-cols-3 gap-2">
-{otherHosts.map((h:any)=>(<div key={h.id} onClick={()=>joinP(h)} className="bg-zinc-900 border-2 border-pink-600 rounded-2xl p-3 text-center cursor-pointer"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[9px] text-zinc-400 truncate">{h.country}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">SEE VIDEO 🔥</div></div>))}
+{hosts.map((h:any)=>(<div key={h.id} onClick={()=>joinP(h)} className="bg-zinc-900 border-2 border-pink-600 rounded-2xl p-3 text-center cursor-pointer"><img src={h.avatar} className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-pink-600" alt="av"/><div className="text-xs mt-2 font-bold truncate">{h.name}</div><div className="text-[9px] text-zinc-400 truncate">{h.country}</div><div className="text-[10px] bg-gradient-to-r from-pink-600 to-purple-600 rounded-full mt-2 px-3 py-1.5 font-black">SEE VIDEO 🔥</div></div>))}
 </div>
 )}
 </div>
