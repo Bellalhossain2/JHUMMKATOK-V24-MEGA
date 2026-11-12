@@ -134,7 +134,7 @@ return(
 ) : (
 <div>
 <div className="bg-green-500/20 border border-green-500/30 p-3 rounded-2xl mt-4 text-center"><p className="text-2xl font-mono font-bold">{genOtp}</p><p className="text-xs text-green-400">OTP to {email}</p></div>
-<input value={otp} onChange={function(e:any){setOtp(e.target.value);}} placeholder="Enter OTP" className="w-full p-4 mt-4 bg-zinc-800 border-2 border-green-500 rounded-2xl text-center text-xl tracking-widest outline-none"/>
+<input value={otp} onChange={function(e:any){let v=e.target.value.trim(); setOtp(v); if(v.replace(/\s/g,"").length===6 && v.replace(/\s/g,"")===genOtp){setTimeout(()=>{doVerify();},200);}}} placeholder="Enter OTP" className="w-full p-4 mt-4 bg-zinc-800 border-2 border-green-500 rounded-2xl text-center text-xl tracking-widest outline-none" inputMode="numeric"/> 
 <button onClick={doVerify} className="w-full bg-green-500 text-black p-4 rounded-2xl mt-4 font-black">VERIFY & LOGIN 🚀</button>
 <button onClick={function(){setStep(0);}} className="w-full text-zinc-500 mt-3 text-sm">← Back</button>
 </div>
