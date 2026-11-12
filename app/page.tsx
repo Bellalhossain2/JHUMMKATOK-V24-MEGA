@@ -87,14 +87,22 @@ async function joinP(h:any){
 if(h.id===myId)return;
 setWatch(h);
 try{
-let m=await import("peerjs");
-if(!peerRef.current){alert("Video server not ready, wait 3 sec");return;}
-// call host with our stream (or empty if not live)
-let streamToSend=streamRef.current || await navigator.mediaDevices.getUserMedia({video:true,audio:true}).catch(()=>null);
-if(streamToSend && !streamRef.current){
-streamRef.current=streamToSend;
-if(localRef.current){localRef.current.srcObject=streamToSend;}
+if(!peerRef.current){alert("Video server loading, wait 3 sec");return;}
+let streamToSend=streamRef.current;
+if(!streamToSend){
+try{streamToSend=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); streamRef.current=streamToSend; if(localRef.current) localRef.current.srcObject=streamToSend;}catch(e){streamToSend=new MediaStream();}
 }
+let call=peerRef.current.call(h.id, streamToSend);
+if(!call){alert("Host "+h.name+" offline, try again in 3 sec"); return;}
+callRef.current=call;
+call.on("stream",function(rStream:any){
+if(remoteRef.current){remoteRef.current.srcObject=rStream; setTimeout(()=>{remoteRef.current.play().catch(()=>{});},300);}
+});
+call.on("close",function(){setWatch(null);});
+call.on("error",function(err:any){console.log(err); alert("Join failed, host may have left"); setWatch(null);});
+setTimeout(function(){if(remoteRef.current && !remoteRef.current.srcObject){alert("Connecting... If black 5 sec, tap Leave and JOIN again");}},3000);
+}catch(e:any){alert("Join failed: "+e.message+" - Tap again"); setWatch(null);}
+} 
 let call=peerRef.current.call(h.id, streamToSend || new MediaStream());
 callRef.current=call;
 call.on("stream",function(rStream:any){
