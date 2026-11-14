@@ -56,7 +56,7 @@ if(!db)return;
 let unsubs:any=[];
 ROOMS.forEach((r:any)=>{
 let unsub=onSnapshot(doc(db,"live",r),(snap:any)=>{
-if(snap.exists()){ let data=snap.data(); if(Date.now()-data.time<30000) setLiveMap((prev:any)=>({...prev,[r]:data})); else setLiveMap((prev:any)=>{let n={...prev}; delete n[r]; return n;}); }
+if(snap.exists()){ let data=snap.data(); if(Date.now()-data.time<300000) setLiveMap((prev:any)=>({...prev,[r]:data})); else setLiveMap((prev:any)=>{let n={...prev}; delete n[r]; return n;}); }
 else{ setLiveMap((prev:any)=>{let n={...prev}; delete n[r]; return n;}); }
 });
 unsubs.push(unsub);
